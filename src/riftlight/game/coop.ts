@@ -132,6 +132,11 @@ export class LocalCoop {
 
   constructor(private readonly host: CoopHost) {}
 
+  /** The guest whose hero `actor` is, if one is (its pad rumbles for it). */
+  guestOf(actor: unknown): Guest | undefined {
+    return actor ? this.guests.find((g) => g.hero?.actor === actor) : undefined;
+  }
+
   /** Seats taken (2 to 4). */
   get seats(): number[] {
     return this.guests.map((g) => g.seat);

@@ -317,7 +317,7 @@ Several players on one device (`same-screen`, `split-screen`, `hot-seat`, CONTRO
 the input is player 1's (keys, mouse, touch, every pad) until the game turns on
 `ctx.input.padPlayers` and, where joining is meant, `ctx.input.joinWith = ['PadA']`: a pad that
 presses Cross joins (`ctx.input.joinedNow`), stops moving player 1, and `ctx.input.player(slot)`
-reads it alone (recorded: it replays). Same-screen keeps everyone in view; hot-seat says whose
+reads it alone (recorded: it replays) and `.rumble()` shakes it alone. Same-screen keeps everyone in view; hot-seat says whose
 turn it is.
 
 ### Physics queries and triggers

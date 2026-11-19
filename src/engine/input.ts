@@ -410,6 +410,10 @@ export class PadPlayer implements KeyReader {
   readonly queued = new Map<string, number>();
   /** @internal Codes that read as up until they are let go (the press that joined). */
   readonly latched = new Set<string>();
+  /** @internal The pad as this frame's poll saw it (what `rumble` shakes). */
+  gamepad: GamepadLike | null = null;
+  /** @internal This frame's strongest rumble request (`rumble`). */
+  rumbleWant: Required<Rumble> | null = null;
 
   constructor(
     /** Its `navigator.getGamepads()` slot. */
@@ -457,6 +461,17 @@ export class PadPlayer implements KeyReader {
     return len > 1 ? { x: x / len, y: y / len } : { x, y };
   }
 
+  /**
+   * Shake this joined pad alone (a couch guest's hit), as `input.rumble` shakes player 1's pad in
+   * use: the frame's strongest request plays when the frame ends, scaled by the player's vibration.
+   * Nothing happens headless, during a replay, at vibration 0, with no pad in the slot or on a pad
+   * that can't rumble. For a guest's pad (`joined`): player 1's is `input.rumble`. Output only:
+   * never recorded.
+   */
+  rumble(r: Rumble): void {
+    this.rumbleWant = strongerRumble(this.rumbleWant, r);
+  }
+
   /** @internal A press now (queued at the frame before's time, as the merged input's are). */
   press(code: string): void {
     this.pressed.add(code);
@@ -466,6 +481,8 @@ export class PadPlayer implements KeyReader {
   /** @internal Gone: nothing held, sticks centred. */
   clear(): void {
     this.connected = false;
+    this.gamepad = null;
+    this.rumbleWant = null;
     this.held.clear();
     this.latched.clear();
     this.padAxis.x = this.padAxis.y = this.lookAxis.x = this.lookAxis.y = 0;
@@ -642,6 +659,15 @@ export class Input {
     return this._dualSenseGuest;
   }
   private _dualSenseGuest = false;
+  /**
+   * Couch co-op: the slot (`player(slot)`) of the guest whose pad is the DualSense 52in1 reads
+   * (`dualSenseGuest`), so a game can light its bar for that player; null while it is player 1's,
+   * or several guests hold DualSenses (whose it is is unknown). Presentation only, as `dualSenseGuest`.
+   */
+  get dualSenseGuestSlot(): number | null {
+    return this._dualSenseGuestSlot;
+  }
+  private _dualSenseGuestSlot: number | null = null;
   /** The finger on the touchpad that may be a gesture (`touchpad`). */
   private pad1: { id: number; x0: number; y0: number; x: number; y: number; t: number; spoilt: boolean } | null = null;
   /** Two fingers or the touchpad's click were seen since the pad was last bare: nothing ending before it is bare again is a gesture. */
@@ -972,26 +998,29 @@ export class Input {
    */
   rumble(r: Rumble): void {
     if (this._playing || !this.target) return;
-    const strong = unit(r.strong);
-    const weak = unit(r.weak);
-    const ms = Math.min(5000, Math.max(0, Number.isFinite(r.ms) ? r.ms! : 100));
-    if (!(strong > 0 || weak > 0) || !(ms > 0)) return;
-    const w = this.rumbleWant;
-    if (!w) this.rumbleWant = { strong, weak, ms };
-    else {
-      w.strong = Math.max(w.strong, strong);
-      w.weak = Math.max(w.weak, weak);
-      w.ms = Math.max(w.ms, ms);
-    }
+    this.rumbleWant = strongerRumble(this.rumbleWant, r);
   }
 
-  /** End of a frame: play the frame's strongest rumble on the pad in use. */
+  /**
+   * End of a frame: play the frame's strongest rumble on the pad in use, and each couch player's
+   * on its own pad (`PadPlayer.rumble`).
+   */
   private playRumble(): void {
     const r = this.rumbleWant;
     this.rumbleWant = null;
-    if (!r || this._playing || !this.target || this._device !== 'pad') return;
+    const live = !this._playing && !!this.target;
+    if (r && live && this._device === 'pad') this.shake(this.rumblePad, r);
+    for (const p of this.pads) {
+      const w = p.rumbleWant;
+      p.rumbleWant = null;
+      if (w && live && p.connected) this.shake(p.gamepad, w);
+    }
+  }
+
+  /** Play `r` on `pad`, scaled by `vibration` (a pad that can't rumble: nothing). */
+  private shake(pad: GamepadLike | null, r: Required<Rumble>): void {
     const k = unit(this.vibration);
-    const actuator = this.rumblePad?.vibrationActuator;
+    const actuator = pad?.vibrationActuator;
     if (!(k > 0) || !actuator || typeof actuator.playEffect !== 'function') return;
     try {
       const done = actuator.playEffect('dual-rumble', { startDelay: 0, duration: r.ms, strongMagnitude: r.strong * k, weakMagnitude: r.weak * k });
@@ -1247,7 +1276,7 @@ export class Input {
 
   /** Call at the end of each rendered frame (the frame's rumble plays now). */
   endFrame(): void {
-    if (this.rumbleWant) this.playRumble();
+    if (this.rumbleWant || this.pads.some((p) => p.rumbleWant)) this.playRumble();
     this.pressed.clear();
     this._commands = [];
     this._buttonEvents = [];
@@ -1604,7 +1633,7 @@ export class Input {
             }
           }
         }
-        owns.push({ own, down: padDown, chord: padChord, taps: padTaps, l, r, lt: value(6), rt: value(7) });
+        owns.push({ own, pad, down: padDown, chord: padChord, taps: padTaps, l, r, lt: value(6), rt: value(7) });
       }
       // Used, not merely connected: a button that went down, a trigger pulled past TRIGGER_USE, a
       // stick that moved past STICK_USE. A pad seen for the first time counts only for a button
@@ -1645,6 +1674,7 @@ export class Input {
     const ds = this._playing ? null : this.dualsense;
     const guests = ds ? this.dualSenseGuests(list) : null;
     this._dualSenseGuest = !!guests;
+    this._dualSenseGuestSlot = guests?.length === 1 ? guests[0]! : null;
     let gesture: TouchpadGesture | null = null;
     if (ds?.touchpad && this.touchpad) gesture = this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad') || !!guests?.some((s) => this.pads[s]?.held.has('PadTouchpad')));
     else {
@@ -1774,8 +1804,9 @@ export class Input {
   private pollOwn(owns: readonly OwnPoll[]): void {
     if (this._playing) return;
     const live = new Set<number>();
-    for (const { own, down, chord, taps, l, r, lt, rt } of owns) {
+    for (const { own, pad, down, chord, taps, l, r, lt, rt } of owns) {
       live.add(own.slot);
+      own.gamepad = pad;
       for (const c of own.latched) if (!down.has(c)) own.latched.delete(c);
       for (const c of own.latched) down.delete(c);
       for (const c of down) if (!own.held.has(c) && !chord.has(c)) own.press(c);
@@ -1856,6 +1887,7 @@ export class Input {
 /** A pad on its own as a poll saw it (`pollOwn`). */
 interface OwnPoll {
   readonly own: PadPlayer;
+  readonly pad: GamepadLike;
   readonly down: Set<string>;
   readonly chord: ReadonlySet<string>;
   readonly taps: readonly string[];
@@ -1907,6 +1939,19 @@ function aimLean(past: number): number {
   if (past === 0) return 0;
   const push = MOTION_AIM.floor + (1 - MOTION_AIM.floor) * Math.min(1, Math.abs(past) / MOTION_AIM.full);
   return Math.sign(past) * push;
+}
+
+/** `want` with `r` merged in (each motor's strongest, the longest), or `want` when `r` asks for nothing. */
+function strongerRumble(want: Required<Rumble> | null, r: Rumble): Required<Rumble> | null {
+  const strong = unit(r.strong);
+  const weak = unit(r.weak);
+  const ms = Math.min(5000, Math.max(0, Number.isFinite(r.ms) ? r.ms! : 100));
+  if (!(strong > 0 || weak > 0) || !(ms > 0)) return want;
+  if (!want) return { strong, weak, ms };
+  want.strong = Math.max(want.strong, strong);
+  want.weak = Math.max(want.weak, weak);
+  want.ms = Math.max(want.ms, ms);
+  return want;
 }
 
 /** A value clamped to 0..1 (0 when it is not a number). */

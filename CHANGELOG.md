@@ -8,6 +8,11 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.80.0
+
+- `PadPlayer.rumble(r)`: couch co-op shakes a guest's joined pad alone (`input.player(slot).rumble`), as `input.rumble` shakes player 1's: the frame's strongest, scaled by the vibration setting; nothing headless, in a replay or with no pad in the slot (docs/engine/couch.md).
+- `input.dualSenseGuestSlot`: which couch guest holds the DualSense 52in1 reads (null while it is player 1's, or several guests hold one), so the light bar can show that player's state. Presentation only, never recorded.
+
 ## 0.79.0
 
 - A replay plays the `speaker` bus with the other sounds, never from the controller's speaker: like the light bar, the triggers and rumble, the speaker is an output and sends nothing during a replay (docs/engine/hub.md).

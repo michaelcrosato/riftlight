@@ -59,8 +59,13 @@ for (const slot of ctx.input.joinedNow) seat(slot); // the pads that joined this
   `padPressed`; two joined DualSenses: on neither, whose is unknown), and its gyro is not read (it
   never turns player 1's aim; 52in1's own Motion aim turns its own stick). One driving player 1, or
   no `id` naming one: player 1's, as without couch co-op. `input.dualSenseGuest` says, each poll,
-  that it is a guest's, so player 1's prompts can leave its gestures out: presentation only, never
-  recorded, and false in a replay.
+  that it is a guest's, so player 1's prompts can leave its gestures out, and
+  `input.dualSenseGuestSlot` whose (one guest's slot; null for several), so the light bar can show
+  that player's state: presentation only, never recorded, and false (null) in a replay. A
+  microphone shout (`input.voice`) is the room's: it presses on player 1's input, whoever shouted.
+- **Rumble**: `input.player(slot).rumble(r)` shakes that pad alone, as `input.rumble(r)` shakes
+  player 1's pad in use: the frame's strongest, scaled by the vibration setting, nothing headless,
+  in a replay or with no pad in the slot.
 
 Headless tests feed pads with `input.setGamepads([...])` (each `GamepadLike` with its `index`):
 `src/engine/input.test.ts`, `src/engine/replay.test.ts` *couch co-op*.
