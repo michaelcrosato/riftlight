@@ -251,8 +251,8 @@ if (r.back) close();                                  // Esc / Backspace / Circl
 ```
 
 `MenuInput` (`src/engine/ui/menu.ts`, `MENU_KEYS`): Enter / Space / Cross confirm, Esc /
-Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a held
-direction repeats after 0.35 s, `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
+Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a press, a
+lean steps at once; held, it repeats after 0.35 s: `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
 confirm: [...], keys: ['KeyX', 'PadX'] })` changes bindings and passes a menu's own shortcuts on as
 `key` events. `FocusList` moves with those events (left / right on a one-column list as `adjust`,
 for a slider), and with the pointer: hovering an item focuses it (only when the pointer moves, so a

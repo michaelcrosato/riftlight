@@ -2,7 +2,7 @@
 // repeat) and FocusList (a list's focus, moved by those events and by the pointer). Both read only
 // ctx.input, so what they do replays; their timers and focus are data (save-states).
 import { describe, expect, it } from 'vitest';
-import { type GamepadLike, Input, SWIPE_KEYS } from '../input';
+import { GAMEPAD_DEADZONE, type GamepadLike, Input, SWIPE_KEYS } from '../input';
 import { FocusList, MENU_KEYS, MENU_REPEAT, type MenuEvent, MenuInput, ndcToHud } from './menu';
 
 const target = () => new EventTarget() as unknown as Window;
@@ -48,11 +48,40 @@ describe('MenuInput', () => {
     for (let f = 0; f < 60; f++) repeats += step(() => {}, [down]).length;
     expect(repeats).toBeGreaterThanOrEqual(10); // then several a second
     expect(step()).toEqual([]); // let go
-    // the left stick leaning far enough is a held direction (repeats only, after the pause)
+    // the left stick leaning far enough is a held direction too
     let stick = 0;
     for (let f = 0; f < 40; f++) stick += step(() => {}, [pad([-0.95, 0, 0, 0])]).filter((e) => e.kind === 'nav' && e.dir === 'left').length;
     expect(stick).toBeGreaterThan(0);
     expect(step((i) => (i.setKey('KeyW', true), i.setKey('KeyW', false)))).toEqual([{ kind: 'nav', dir: 'up' }]);
+  });
+
+  it('the left stick steps as it leans past its threshold, as a d-pad press does, then repeats as the d-pad does; a flick is one step', () => {
+    const input = new Input(target());
+    const step = frames(new MenuInput(), input);
+    const navs = (axes: number[]) => step(() => {}, [pad(axes)]).filter((e) => e.kind === 'nav').map((e) => (e as { dir: string }).dir);
+    /** The stick's raw y that reads `v` after the deadzone (y down: + leans down). */
+    const lean = (v: number) => Math.sign(v) * (GAMEPAD_DEADZONE + Math.abs(v) * (1 - GAMEPAD_DEADZONE));
+    /** The frames (from the first) a direction stepped on, held `n` frames from either source. */
+    const stepsOver = (hold: () => string[], n: number) => {
+      const at: number[] = [];
+      for (let f = 0; f < n; f++) if (hold().length) at.push(f);
+      return at;
+    };
+    expect(navs([0, 0, 0, 0])).toEqual([]);
+    const stick = stepsOver(() => navs([0, 0.9, 0, 0]), 60); // the stick held down a second (y down)
+    expect(navs([0, 0, 0, 0])).toEqual([]); // let go
+    const dpad = stepsOver(() => step(() => {}, [pad([0, 0, 0, 0], [13])]).filter((e) => e.kind === 'nav').map(String), 60);
+    expect(step()).toEqual([]);
+    expect(stick[0], 'the first step on the frame it leans past the threshold').toBe(0);
+    expect(stick, 'then the repeat as the d-pad has it: a pause, then several a second').toEqual(dpad);
+    expect(stick[1]! / 60, 'the pause').toBeGreaterThanOrEqual(MENU_REPEAT.delay);
+    // a flick: past the threshold for a few frames, then back to rest: one step
+    const flick = [0.2, 0.75, 1, 0.9, 0.4, 0].flatMap((y) => navs([0, lean(y), 0, 0]));
+    expect(flick, 'one step for one flick').toEqual(['down']);
+    // a thumb resting about the threshold (it wavers a little past it and back) steps once, not on every crossing
+    const waver = [0.65, 0.58, 0.62, 0.55, 0.61, 0.57, 0.63].flatMap((y) => navs([0, lean(-y), 0, 0]));
+    expect(waver, 'one step while it wavers about the threshold').toEqual(['up']);
+    expect(navs([0, 0, 0, 0])).toEqual([]);
   });
 
   it('passes on its own shortcuts as keys, the wheel, and swipes', () => {

@@ -39,6 +39,12 @@ async function open(o: { hub?: HubSettingsSource; voice?: boolean; motion?: bool
     e.input.endFrame();
     return r;
   };
+  /** A frame of play before the screen opens: the pad as given, the screen not running. */
+  const play = (axes?: number[], dt = 1 / 60) => {
+    e.input.beginFrame(t, dt, [pad([], axes)]);
+    t += dt;
+    e.input.endFrame();
+  };
   /** A button pressed and let go. */
   const press = (button: number) => {
     const r = frame([button]);
@@ -46,7 +52,7 @@ async function open(o: { hub?: HubSettingsSource; voice?: boolean; motion?: bool
     return r;
   };
   const value = (id: string) => menu.rows().find((r) => r.id === id)!;
-  return { e, menu, frame, press, value };
+  return { e, menu, frame, play, press, value };
 }
 
 describe('the settings screen', () => {
@@ -138,15 +144,15 @@ describe('the settings screen', () => {
   });
 
   it('a stick still held from a run when the screen opens steps nothing until it goes back to rest', async () => {
-    const { e, menu, frame, value } = await open();
-    for (let i = 0; i < 10; i++) frame([], [1, 0, 0, 0]); // running right
+    const { e, menu, frame, play, value } = await open();
+    for (let i = 0; i < 10; i++) play([1, 0, 0, 0]); // running right
     e.input.release(); // what opening the panel does
     menu.reset();
     const look = value('look').value;
     for (let i = 0; i < 60; i++) expect(frame([], [0.9, 0, 0, 0]).changed).toBe(false); // a second, the thumb still on it
     expect([menu.list.index, value('look').value, e.settings.values]).toEqual([0, look, {}]);
     frame(); // back to rest: it is the menu's now
-    for (let i = 0; i < 28; i++) frame([], [0.9, 0, 0, 0]); // held right past the repeat delay: one step
+    for (let i = 0; i < 12; i++) frame([], [0.9, 0, 0, 0]); // leaned right: a step at once, and none more before the repeat's pause
     expect(e.settings.values.look).toBe('none');
     for (let i = 0; i < 30; i++) frame([], [0, -0.9, 0, 0]); // down, held: the focus moves
     expect(menu.list.index).toBeGreaterThan(0);
