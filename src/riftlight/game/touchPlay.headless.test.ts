@@ -1,12 +1,12 @@
 // Riftlight played by touch on a landscape phone (844×390 at DPR 2, touch controls: the art the
 // page draws, 422×195), headless: what a finger's swipes dismiss (a panel from its frame or title
 // bar, never a sticky one, never one a scroll or a slider takes; the centre banner; the loot feed;
-// an NPC's line; the item windows from a title bar), that a finger acts on a menu as it lets go
-// (a swipe across it presses nothing), a finger's taps on a loot label and the interact prompt,
-// the item windows' action buttons, and the assists (auto attack, aim assist): touch only, each a
-// setting, decided from recorded input so a recording replays to the same fingerprint. One engine
-// for the file, tests in order. The touches go through the engine's input as the canvas sends them
-// (`Touch` and its position, a swipe's press).
+// an NPC's line; the item windows from a title bar; the level's map), that a finger acts on a menu
+// as it lets go (a swipe across it presses nothing), a finger's taps on a loot label and the
+// interact prompt, the item windows' action buttons, and the assists (auto attack, aim assist):
+// touch only, each a setting, decided from recorded input so a recording replays to the same
+// fingerprint. One engine for the file, tests in order. The touches go through the engine's input
+// as the canvas sends them (`Touch` and its position, a swipe's press).
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type Engine, SWIPE_KEYS, type SwipeDirection } from '../../engine';
@@ -16,6 +16,7 @@ import { type HeadlessRiftlight, headlessRiftlight, makeRiftlight } from '../hea
 import { t } from '../lang';
 import { findItem } from '../loot/inventory';
 import { type Box, overlaps } from '../ui/layout';
+import { mapView } from '../ui/hud';
 import type { RealLoot } from '../wire/loot';
 import { HEADER } from '../ui/items/ItemsUi';
 import type { HeroIntent } from './ports';
@@ -392,6 +393,29 @@ describe("a finger's taps", () => {
     },
     T,
   );
+  it(
+    'the level\'s map: a swipe that starts on it closes it (any way: the finger down on it does), one that starts off it leaves it open',
+    () => {
+      const { engine, game } = h;
+      expect(game.screen, 'in a level').toBe('level');
+      const at = game as unknown as { mapOpen: boolean; mapRoom(): Box; minimapModel(): Parameters<typeof mapView>[1] };
+      for (const dir of ['left', 'right', 'up', 'down'] as const) {
+        at.mapOpen = true;
+        engine.step(2);
+        const v = mapView(at.mapRoom(), at.minimapModel());
+        expect(v.w * v.h, 'the map shows').toBeGreaterThan(0);
+        // off the map (left of it, beside the stick's zone): open
+        if (v.x > 12) {
+          swipe(Math.floor(v.x / 2), Math.floor(v.y + v.h / 2), dir);
+          expect(at.mapOpen, `${dir} from off the map: open`).toBe(true);
+        }
+        swipe(Math.floor(v.x + v.w / 2), Math.floor(v.y + v.h / 2), dir);
+        expect(at.mapOpen, `${dir} from the map: closed`).toBe(false);
+      }
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
 });
 
 describe("a finger's assists", () => {
@@ -427,6 +451,9 @@ describe("a finger's assists", () => {
       engine.input.noteDevice('keyboard');
       engine.step(2);
       expect(intents(20).some((i) => i.attack), 'the keyboard: it does not').toBe(false);
+      engine.input.noteDevice('pad');
+      engine.step(2);
+      expect(intents(20).some((i) => i.attack), 'a pad: it does not').toBe(false);
       engine.input.noteTouch();
       game.settings.touchAutoAttack = false;
       engine.step(2);
@@ -491,6 +518,15 @@ describe("a finger's assists", () => {
       const target = pos(far!.id);
       expect(Math.hypot(aimed.x - target.x, aimed.z - target.z), 'at the monster the stick points at').toBeLessThan(0.5);
       expect(TOUCH_AIM.cone).toBeLessThan(45);
+      // a pad's stick or the keyboard aimed that way: no assist, auto-aim's wide cone takes the nearer one
+      for (const device of ['pad', 'keyboard'] as const) {
+        engine.input.noteDevice(device);
+        const plain = intents(2).at(-1)!.aim;
+        const nearer = pos(near!.id);
+        expect(Math.hypot(plain.x - nearer.x, plain.z - nearer.z), `${device}: auto-aim, the nearer one`).toBeLessThan(0.5);
+      }
+      engine.input.noteTouch();
+      expect(Math.hypot(intents(2).at(-1)!.aim.x - target.x, intents(2).at(-1)!.aim.z - target.z), 'touch again: the assist').toBeLessThan(0.5);
       // the assist off: auto-aim's wide cone, the nearer one
       game.settings.touchAimAssist = false;
       const wide = intents(2).at(-1)!.aim;
