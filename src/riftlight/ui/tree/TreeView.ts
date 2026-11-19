@@ -10,12 +10,14 @@
  * Controls: drag / WASD / arrows / right stick pan; wheel / pinch / + - / triggers zoom (Q E
  * too, unless the host takes them: `pages`); hover or tap shows the tooltip with the path cost;
  * click / Enter / A allocates the path; right-click / long-press / Backspace / X refunds; Tab / Y
- * shows the stat summary; / or F searches; Escape (or `closeKeys`) / B closes. The left stick
- * drives a cursor that snaps to the nearest node; the d-pad steps from node to node.
+ * shows the stat summary; / or F searches (the keyboard's: no box on a pad); Escape (or
+ * `closeKeys`) / B closes. The left stick drives a cursor that snaps to the nearest node; the
+ * d-pad steps from node to node (`cursor.ts`).
  *
  * While open the view takes the keyboard (key events don't reach the game, except its host's
- * `pages` keys) and polls the first standard gamepad itself; the shell should pause the game
- * while it is open. A view in
+ * `pages` keys); the pad is the host's to hand it each frame (`pad`: the engine's input for its
+ * player, so the pad in use, never a couch guest's); the shell should pause the game while it is
+ * open. A view in
  * a game passes `defer`: what the player does to the tree (allocate, refund, close) goes to it
  * instead of happening, and the game hands it back to `perform` from its recorded input, so a
  * replay of the game does the same to the tree.
@@ -31,7 +33,8 @@ import { REGIONS } from '../../tree/data/regions';
 import { kindName, nodeFlavour, nodeLines, nodeName, regionName } from '../../tree/text';
 import { defaultTree, PassiveTree, searchTree, summarizeMods, TreeState } from '../../tree/tree';
 import type { TreeNode } from '../../tree/types';
-import { clampCam, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS, type TreeCam } from './camera';
+import { toScreen, toTree, zoomAt, type TreeCam } from './camera';
+import { BOTTOM, TOP, TreeCursor, type TreePadInput } from './cursor';
 import { css, glyphWidth, pack, PixelBuffer, textWidth } from './pixels';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeOutcome, type TreeRules } from './actions';
 
@@ -66,7 +69,8 @@ export interface TreeViewOptions extends TreeRules {
    * The host's screens either side of the tree (the Riftlight shell's ring of character screens):
    * its `keys` (Q / E) are left to the game, not zoom, so the host pages away on them as on the
    * other screens; the pad's (`pad`, L1 / R1) the host reads from its own input (the view never
-   * takes them). The bottom bar names them: "screens". Absent (the tree page): Q / E zoom.
+   * takes them). The bottom bar names them ("screens"), read each time it is drawn (`pad` may be a
+   * getter: a DualSense's swipes come and go). Absent (the tree page): Q / E zoom.
    */
   pages?: TreePages;
   onClose?: () => void;
@@ -122,8 +126,6 @@ export function treeHints(o: { mode: TreeHintMode; refunds: boolean; style: PadG
 }
 
 const C = Object.fromEntries(Object.entries(PALETTE).map(([k]) => [k, pack(k as PaletteColor)])) as Record<PaletteColor, number>;
-const TOP = 12;
-const BOTTOM = 10;
 const PULSE = 0.45;
 
 interface Line {
@@ -143,9 +145,9 @@ export class TreeView {
   /** The bitmap at art size, scaled onto the canvas when the frame holds device-font text. */
   private artCanvas: HTMLCanvasElement | null = null;
   private framing: Framing | null = null;
-  private readonly index: PointIndex<TreeNode>;
+  /** The camera, the cursor and the node under it, and what the pad does with them (`TreeCursor`). */
+  private readonly nav: TreeCursor;
   private readonly links: [TreeNode, TreeNode][] = [];
-  private cam: TreeCam = { x: 0, y: 0, zoom: 0.12 };
   private opened = false;
   private raf = 0;
   private last = 0;
@@ -157,15 +159,10 @@ export class TreeView {
   private drag: { x: number; y: number; cam: TreeCam; moved: boolean; button: number; type: string; down: number } | null = null;
   private pinch: { dist: number; cam: TreeCam; mx: number; my: number } | null = null;
   private longPress = 0;
-  private cursor = { x: 240, y: 135 };
-  private padCursor = false;
   /** What last used the view itself (a finger or the mouse on it, a key): its hints, until then the host's device. */
   private used: 'touch' | 'mouse' | null = null;
   /** The host's device the bottom bar last named (`TreeViewOptions.device`). */
   private deviceShown: 'keyboard' | 'pad' | 'touch' | undefined;
-  private padHeld: boolean[] = [];
-  private padStick = false;
-  private hover: string | null = null;
   private tapped: { id: string; at: number } | null = null;
   private preview: { id: string; path: string[] | null; version: number } | null = null;
   private ownedCache: { version: number; owned: Set<string>; frontier: Set<string> } | null = null;
@@ -179,16 +176,18 @@ export class TreeView {
   private statsScroll = 0;
   /** The bottom bar's hints as last drawn (their ids, in order: `debug().hints`). */
   private hintsShown: string[] = [];
+  /** What the top bar's search box showed (its placeholder or the search), or null when it wasn't drawn (a pad): `debug().search`. */
+  private searchShown: string | null = null;
   private readonly ac = new AbortController();
   private openAc: AbortController | null = null;
 
   constructor(private readonly options: TreeViewOptions) {
     this.tree = options.tree ?? defaultTree();
     this.stateRef = options.state ?? new TreeState(this.tree);
-    this.index = new PointIndex(this.tree.nodes, 120);
     for (const n of this.tree.nodes) for (const l of n.links) if (l > n.id) this.links.push([n, this.tree.node(l)]);
     const res = options.resolution ?? RESOLUTIONS.default;
     this.buf = new PixelBuffer(res.width, res.height);
+    this.nav = new TreeCursor(this.tree, res.width, res.height);
     registerTreeSounds(options.audio);
 
     const root = (this.root = document.createElement('div'));
@@ -212,6 +211,31 @@ export class TreeView {
 
     search.addEventListener('input', () => this.setQuery(search.value), { signal: this.ac.signal });
     search.addEventListener('blur', () => (this.dirty = true), { signal: this.ac.signal });
+  }
+
+  private get cam(): TreeCam {
+    return this.nav.cam;
+  }
+  private set cam(c: TreeCam) {
+    this.nav.cam = c;
+  }
+  private get cursor(): { x: number; y: number } {
+    return this.nav.cursor;
+  }
+  private set cursor(c: { x: number; y: number }) {
+    this.nav.cursor = c;
+  }
+  private get padCursor(): boolean {
+    return this.nav.padCursor;
+  }
+  private set padCursor(on: boolean) {
+    this.nav.padCursor = on;
+  }
+  private get hover(): string | null {
+    return this.nav.hover;
+  }
+  private set hover(id: string | null) {
+    this.nav.hover = id;
   }
 
   // ---------------------------------------------------------------- public API
@@ -249,7 +273,6 @@ export class TreeView {
     window.addEventListener('keyup', (e) => this.onKey(e, false), { ...sig, capture: true });
     window.addEventListener('resize', () => this.resize(), sig);
     window.addEventListener('blur', () => this.held.clear(), sig);
-    this.padHeld = [];
     this.resize();
     this.dirty = true;
     this.last = performance.now(); // real time: UI animation
@@ -320,6 +343,22 @@ export class TreeView {
     this.dirty = true;
   }
 
+  /**
+   * One game frame of the pad, from the host's input for its player (the engine's: the pad in use,
+   * never a couch guest's; recorded, so a replay moves the cursor the same): the cursor and the
+   * camera move, and Cross / Square act on the node under it as a click would (through `defer`).
+   */
+  pad(input: TreePadInput, dt: number): void {
+    if (!this.opened) return;
+    const ask = this.nav.pad(input, dt);
+    if (ask.ticked) this.options.audio?.play('treeTick');
+    if (ask.take) this.act({ kind: 'activate', id: ask.take });
+    if (ask.refund) this.act({ kind: 'refund', id: ask.refund });
+    if (ask.stats) this.showStats = !this.showStats;
+    if (ask.close && (this.options.padCloses ?? (this.options.closeKeys ?? ['Escape']).length > 0)) this.act({ kind: 'close' });
+    if (ask.moved || ask.stats) this.dirty = true;
+  }
+
   /** The player did something to the tree: hand it to `defer`, or do it now. */
   private act(action: TreeAction): void {
     if (this.options.defer) this.options.defer(action);
@@ -341,6 +380,7 @@ export class TreeView {
       showStats: this.showStats,
       cursor: { ...this.cursor },
       hints: [...this.hintsShown],
+      search: this.searchShown,
     };
   }
 
@@ -565,116 +605,12 @@ export class TreeView {
     this.hover = id;
   }
 
-  private pollPad(dt: number): void {
-    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
-    const pad = [...pads].find((p) => p && p.connected && p.mapping === 'standard');
-    if (!pad) return;
-    const dz = (v: number) => (Math.abs(v) < 0.2 ? 0 : v);
-    const pressed = (i: number) => !!pad.buttons[i]?.pressed;
-    const edge = (i: number) => pressed(i) && !this.padHeld[i];
-    const W = this.buf.width;
-    const H = this.buf.height;
-    // Left stick: the cursor (camera follows at the edges); released → snap to the nearest node.
-    const lx = dz(pad.axes[0] ?? 0);
-    const ly = dz(pad.axes[1] ?? 0);
-    if (lx || ly) {
-      this.padCursor = true;
-      this.padStick = true;
-      const sp = 170 * dt;
-      this.cursor.x += lx * sp;
-      this.cursor.y += ly * sp;
-      const m = 24;
-      const px = this.cursor.x < m ? this.cursor.x - m : this.cursor.x > W - m ? this.cursor.x - (W - m) : 0;
-      const py = this.cursor.y < TOP + m ? this.cursor.y - TOP - m : this.cursor.y > H - BOTTOM - m ? this.cursor.y - (H - BOTTOM - m) : 0;
-      this.cursor.x = Math.min(W - m, Math.max(m, this.cursor.x));
-      this.cursor.y = Math.min(H - BOTTOM - m, Math.max(TOP + m, this.cursor.y));
-      if (px || py) this.cam = this.clamp({ ...this.cam, x: this.cam.x + (px * 6) / this.cam.zoom, y: this.cam.y + (py * 6) / this.cam.zoom });
-      this.updateHover();
-      this.dirty = true;
-    } else if (this.padStick) {
-      this.padStick = false;
-      this.snapCursor();
-    }
-    // Right stick pans, triggers zoom.
-    const rx = dz(pad.axes[2] ?? 0);
-    const ry = dz(pad.axes[3] ?? 0);
-    if (rx || ry) {
-      this.cam = this.clamp({ ...this.cam, x: this.cam.x + (rx * 260 * dt) / this.cam.zoom, y: this.cam.y + (ry * 260 * dt) / this.cam.zoom });
-      this.updateHover();
-      this.dirty = true;
-    }
-    const zoom = (pad.buttons[7]?.value ?? 0) - (pad.buttons[6]?.value ?? 0);
-    if (Math.abs(zoom) > 0.1) {
-      const [cx, cy] = this.padCursor ? [this.cursor.x, this.cursor.y] : [W / 2, H / 2];
-      this.cam = this.clamp(zoomAt(this.cam, W, H, cx, cy, Math.exp(zoom * 1.6 * dt)));
-      this.updateHover();
-      this.dirty = true;
-    }
-    if (edge(0) && this.hover) this.act({ kind: 'activate', id: this.hover });
-    if (edge(2) && this.hover) this.act({ kind: 'refund', id: this.hover });
-    if (edge(3)) this.showStats = !this.showStats;
-    if (edge(1) && (this.options.padCloses ?? (this.options.closeKeys ?? ['Escape']).length > 0)) this.act({ kind: 'close' });
-    const dirs: [number, number, number][] = [
-      [12, 0, -1],
-      [13, 0, 1],
-      [14, -1, 0],
-      [15, 1, 0],
-    ];
-    for (const [b, dx, dy] of dirs) if (edge(b)) this.step(dx, dy);
-    this.padHeld = pad.buttons.map((b) => b.pressed);
-    if (this.padHeld.some(Boolean)) this.dirty = true;
-  }
-
-  /** D-pad: move the cursor to the next node in a direction (its links first). */
-  private step(dx: number, dy: number): void {
-    const from = this.hover ? this.tree.get(this.hover) : null;
-    const [tx, ty] = toTree(this.cam, this.buf.width, this.buf.height, this.cursor.x, this.cursor.y);
-    const origin = from ?? { x: tx, y: ty };
-    const linked = from ? from.links.map((l) => this.tree.node(l)) : [];
-    const r = 400;
-    const next = stepToward(origin, dx, dy, linked) ?? stepToward(origin, dx, dy, this.index.inRect(origin.x - r, origin.y - r, origin.x + r, origin.y + r));
-    if (!next) return;
-    this.moveCursorTo(next);
-    this.options.audio?.play('treeTick');
-  }
-
-  private snapCursor(): void {
-    const [tx, ty] = toTree(this.cam, this.buf.width, this.buf.height, this.cursor.x, this.cursor.y);
-    const n = this.index.nearest(tx, ty, 48 / this.cam.zoom);
-    if (n) {
-      this.moveCursorTo(n);
-      this.options.audio?.play('treeTick');
-    }
-  }
-
-  private moveCursorTo(n: TreeNode): void {
-    this.padCursor = true;
-    let [sx, sy] = toScreen(this.cam, this.buf.width, this.buf.height, n.x, n.y);
-    if (sx < 30 || sy < TOP + 30 || sx > this.buf.width - 30 || sy > this.buf.height - BOTTOM - 30) {
-      this.cam = this.clamp({ ...this.cam, x: n.x, y: n.y });
-      [sx, sy] = toScreen(this.cam, this.buf.width, this.buf.height, n.x, n.y);
-    }
-    this.cursor = { x: sx, y: sy };
-    this.hover = n.id;
-    this.dirty = true;
-  }
-
   private updateHover(): void {
-    const [tx, ty] = toTree(this.cam, this.buf.width, this.buf.height, this.cursor.x, this.cursor.y);
-    const radius = (this.padCursor ? 10 : 7) / this.cam.zoom;
-    const n = this.cursor.y > TOP && this.cursor.y < this.buf.height - BOTTOM ? this.index.nearest(tx, ty, Math.max(radius, 14)) : null;
-    const id = n?.id ?? null;
-    if (id !== this.hover) {
-      this.hover = id;
-      this.dirty = true;
-    }
+    if (this.nav.updateHover()) this.dirty = true;
   }
 
   private clamp(cam: TreeCam): TreeCam {
-    const b = this.index.bounds;
-    const fit = Math.min(this.buf.width / (b.x1 - b.x0 + 200), (this.buf.height - TOP - BOTTOM) / (b.y1 - b.y0 + 200));
-    const zoom = Math.min(ZOOM_LIMITS.max, Math.max(Math.min(ZOOM_LIMITS.min, fit), cam.zoom));
-    return clampCam({ ...cam, zoom }, b);
+    return this.nav.clamp(cam);
   }
 
   private inSearchBox(x: number, y: number): boolean {
@@ -758,6 +694,8 @@ export class TreeView {
       this.image = null;
       this.cam = { ...this.cam, x: tx, y: ty };
     }
+    this.nav.width = f.artWidth;
+    this.nav.height = f.artHeight;
     this.canvas.width = f.artWidth;
     this.canvas.height = f.artHeight;
     Object.assign(this.canvas.style, { width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
@@ -786,7 +724,6 @@ export class TreeView {
       this.updateHover();
       this.dirty = true;
     }
-    this.pollPad(dt);
     if (this.message && this.time > this.message.until) {
       this.message = null;
       this.dirty = true;
@@ -856,7 +793,7 @@ export class TreeView {
     // Nodes.
     const [x0, y0] = toTree(this.cam, W, H, -12, -12);
     const [x1, y1] = toTree(this.cam, W, H, W + 12, H + 12);
-    const visible = this.index.inRect(x0, y0, x1, y1);
+    const visible = this.nav.index.inRect(x0, y0, x1, y1);
     const blink = Math.floor(this.time * 4) % 2 === 0;
     for (const n of visible) {
       const [sx, sy] = S(n.x, n.y);
@@ -959,6 +896,9 @@ export class TreeView {
     const narrow = this.narrowBar;
     const box = this.searchBox();
     const s = this.stateRef;
+    // the device in use names the controls (the pad cursor, a finger or the mouse on the view, else the host's device)
+    const device = (this.deviceShown = this.options.device?.());
+    const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
     const close = this.closeBox();
     const right = close ? close.x - 3 : W - 4;
     // the right of the bar: points (and gold where it pays for something), short forms when the long ones don't fit
@@ -983,28 +923,32 @@ export class TreeView {
       b.rect(close.x, 0, close.w, TOP, C.plum);
       b.text('×', close.x + 5, 3, C.white);
     }
+    // the search box: the keyboard's (/ opens it) or a finger's (a tap on it); none on a pad, which has
+    // nothing to type with, unless a search typed before is still on
     const focused = document.activeElement === this.search;
-    b.rect(box.x, box.y, box.w, box.h, C.ink);
-    b.frame(box.x, box.y, box.w, box.h, focused ? C.white : C.slate);
-    const fits = box.w - 6;
-    let label = this.query;
-    if (!label && !focused) {
-      label = t(narrow ? 'tree.view.search_short' : 'tree.view.search');
-      if (textWidth(label) > fits) label = t('tree.view.search_short');
-      while (label && textWidth(label) > fits) label = [...label].slice(0, -1).join('');
+    this.searchShown = null;
+    if (mode !== 'pad' || this.query || focused) {
+      b.rect(box.x, box.y, box.w, box.h, C.ink);
+      b.frame(box.x, box.y, box.w, box.h, focused ? C.white : C.slate);
+      const fits = box.w - 6;
+      let label = this.query;
+      if (!label && !focused) {
+        const [long, short] = mode === 'touch' ? ['tree.view.search_tap', 'tree.view.search_tap_short'] : ['tree.view.search', 'tree.view.search_short'];
+        label = t(narrow ? short : long);
+        if (textWidth(label) > fits) label = t(short);
+        while (label && textWidth(label) > fits) label = [...label].slice(0, -1).join('');
+      }
+      // typed text keeps its end in view
+      while (label && textWidth(label) > fits) label = [...label].slice(1).join('');
+      b.text(label, box.x + 3, box.y + 2, this.query ? C.white : C.slate);
+      this.searchShown = label;
+      if (focused && Math.floor(this.time * 3) % 2 === 0) b.rect(box.x + 3 + (label ? textWidth(label) + 1 : 0), box.y + 2, 1, 7, C.white);
     }
-    // typed text keeps its end in view
-    while (label && textWidth(label) > fits) label = [...label].slice(1).join('');
-    b.text(label, box.x + 3, box.y + 2, this.query ? C.white : C.slate);
-    if (focused && Math.floor(this.time * 3) % 2 === 0) b.rect(box.x + 3 + (label ? textWidth(label) + 1 : 0), box.y + 2, 1, 7, C.white);
     if (this.query) b.text(lang().formatNumber(this.matchList.length), box.x + box.w + 4, 3, this.matchList.length ? C.lime : C.red);
     // Bottom hints: as many as fit, the most useful first (shown in their usual order). With the
     // pad, each is its button's glyph (PlayStation's or Xbox's, as the player chose) and a verb.
     b.panel(0, H - BOTTOM, W, BOTTOM, C.night);
     const refunds = !this.options.refundBlocked?.();
-    // the device in use names the controls (the pad cursor, a finger or the mouse on the view, else the host's device)
-    const device = (this.deviceShown = this.options.device?.());
-    const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
     const hints = treeHints({ mode, refunds, style: this.options.padGlyphs?.() ?? 'playstation', pages: this.options.pages });
     const priority = ['take', 'close', 'tap', 'refund', 'hold', 'stats', 'screens', 'find', 'move', 'pan', 'pinch', 'zoom'];
     const glyphs = (h: TreeHint) => h.glyphs.reduce((w, g) => w + glyphWidth(g) + 1, h.glyphs.length ? 2 : 0);

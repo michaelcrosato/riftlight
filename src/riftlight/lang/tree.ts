@@ -177,6 +177,8 @@ const VIEW: Readonly<Record<string, Line>> = {
   'tree.view.gold_short': '{gold}g',
   'tree.view.search': '/ search',
   'tree.view.search_short': '/find',
+  'tree.view.search_tap': 'Search',
+  'tree.view.search_tap_short': 'Find',
   'tree.view.search_label': 'Search the passive tree',
   // the bottom bar: hints, in order of importance (those that don't fit are left out)
   'tree.hint.take': 'Click take',
@@ -233,6 +235,8 @@ const VIEW_NOTES: Readonly<Record<string, string>> = {
   'tree.view.gold_short': 'Top bar on a phone: the hero’s gold (g for gold).',
   'tree.view.search': 'The search box’s placeholder; / is the key that opens it.',
   'tree.view.search_short': 'The search box’s placeholder on a phone; / is the key that opens it.',
+  'tree.view.search_tap': 'The search box’s placeholder on a touch screen, where a tap on the box opens it: no key in it.',
+  'tree.view.search_tap_short': 'The same on a phone held upright: as short as it can be.',
   'tree.hint.take': 'Bottom bar hints with a mouse: an action, then what it does. Key and button names (Tab, /, R-click) stay as they are.',
   'tree.hint.pinch': 'Bottom bar hint on a touch screen: two fingers pinched apart or together zoom the tree. A gesture, then what it does (as Drag pan).',
   'tree.hint.hold': 'Bottom bar hint on a touch screen: a long press on a node refunds it (only at the mystic). A gesture, then what it does (as Drag pan).',

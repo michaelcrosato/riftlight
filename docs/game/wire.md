@@ -64,8 +64,9 @@ them on the stack (modal or not), routes every `UiEvent` to `input()` first, cal
 frame (time to paint) and closes them (`close()`); it draws no frame, and a pointer press is
 the UI's when `covers(x, y)`. Panels in one `group` share an overlay (the item windows are
 group `items`): opening one closes the others, and I closes any of them. The passive tree owns
-the keyboard while open (Escape / P close it and never reach the pause menu), its pointer and
-the pad's sticks and A / X / Y; pad B and the agent API's `back` come through the shell.
+the keyboard while open (Escape / P close it and never reach the pause menu) and its pointer; its
+pad is player 1's from `ctx.input` (never a couch guest's; recorded), handed over each frame
+(`TreeView.pad`; headless a `TreeCursor`); pad B and the agent API's `back` come through the shell.
 
 | view | from | keys |
 | --- | --- | --- |

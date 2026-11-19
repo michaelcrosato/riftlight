@@ -11,6 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { HubSettingsSource } from '../../engine';
 import { type HeadlessRiftlight, headlessRiftlight } from '../headless';
 import type { RealLoot } from '../wire/loot';
+import type { TreePanel } from '../wire/tree';
 import { pagePad, touchpadSwipes } from './controls';
 
 const T = 60_000;
@@ -127,6 +128,25 @@ describe('a DualSense’s touchpad in Riftlight', () => {
     hub.target.dispatchEvent(new Event('change'));
     rl.press('Escape');
     expect([stack(), engine.errors]).toEqual([[], []]);
+  }, T);
+
+  it('the open tree’s bar follows 52in1’s touchpad setting as it changes: the swipes go when it turns off, and come back', () => {
+    const { rl, engine } = h;
+    expect(rl.press('KeyP').ui).toEqual(['tree']);
+    const tree = h.game.layer.find('tree') as TreePanel;
+    /** The glyphs the bar draws for the screens on a pad (L1 R1, and the swipes while they page). */
+    const screens = () => tree.hints('pad').find((x) => x.id === 'screens')?.glyphs.length;
+    expect([screens(), tree.pages?.pad], 'L1 R1 and the swipes').toEqual([4, pagePad(true)]);
+    hub.dualsense.touchpad = false;
+    hub.target.dispatchEvent(new Event('change'));
+    engine.step(1);
+    expect([screens(), tree.pages?.pad], 'off: L1 R1 alone').toEqual([2, pagePad(false)]);
+    hub.dualsense.touchpad = true;
+    hub.target.dispatchEvent(new Event('change'));
+    engine.step(1);
+    expect(screens(), 'on again').toBe(4);
+    rl.press('Escape');
+    expect(engine.errors).toEqual([]);
   }, T);
 
   it('in play a swipe does nothing; the touchpad’s press opens the level’s map', async () => {

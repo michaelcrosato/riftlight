@@ -6,8 +6,10 @@
 // colours; drag, WASD and wheel move/zoom the camera; hovering a node shows it; a click
 // allocates the path (with a sound), a right-click refunds a leaf and refuses a node others
 // depend on; search highlights matches; Tab shows the stat summary; a standard gamepad moves
-// the snapping cursor and A allocates; refreshing keeps the allocation; zero console errors; the
-// bottom bar names clicks on a mouse's page and a finger's gestures on a phone's before any touch.
+// the snapping cursor and A allocates (the page polls it through the engine's input); refreshing
+// keeps the allocation; zero console errors; the bottom bar names clicks on a mouse's page and a
+// finger's gestures on a phone's before any touch, and the search box names / with the keys, no key
+// on a phone, and hides on a pad (nothing to type with).
 //
 // Frames land in .scratch/e2e/riftlight-tree-*.png. Self-contained: e2e.mjs passes its helpers in.
 /* global window, document */
@@ -162,6 +164,7 @@ export async function runRiftlightTree(h) {
       const real = navigator.getGamepads;
       navigator.getGamepads = () => [fake];
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      t.view.setQuery(''); // no search under way (one stays in its box on a pad)
       t.view.focus('start:zeal', 0.3);
       await wait(100);
       const c0 = { ...t.view.debug().cursor };
@@ -185,10 +188,12 @@ export async function runRiftlightTree(h) {
       fake.buttons[0] = { pressed: false, value: 0 };
       await wait(80);
       navigator.getGamepads = real;
-      return { moved: c1.x - c0.x, snapped, stepped, gained: t.state.spent - spent, sounds: t.sounds() };
+      return { moved: c1.x - c0.x, snapped, stepped, gained: t.state.spent - spent, sounds: t.sounds(), search: t.view.debug().search };
     });
     check(pad.moved > 10 && pad.snapped !== null, `left stick moves the cursor and it snaps to a node (${pad.snapped})`);
     check(pad.stepped !== null && pad.gained >= 1, `d-pad steps to ${pad.stepped}, A allocates (+${pad.gained})`);
+    check(pad.search === null, `on a pad the top bar draws no search box (${JSON.stringify(pad.search)})`);
+    await shot('pad');
 
     // ------------------------------------------------------------ persistence and cleanliness
     const before = await E(() => window.__RIFT_TREE__.state.serialize());
@@ -199,6 +204,7 @@ export async function runRiftlightTree(h) {
     await E(() => localStorage.clear());
     const desk = await dbg();
     check(desk.hints.includes('take') && !desk.hints.includes('tap'), `a mouse's page: the bottom bar names clicks (${desk.hints.join(', ')})`);
+    check(desk.search === '/ search', `a mouse's page: the search box names its key (${desk.search})`);
     check(logs.length === 0, `zero console errors/warnings${logs.length ? ':\n    ' + logs.join('\n    ') : ''}`);
     await ctx.browser.close();
 
@@ -206,9 +212,11 @@ export async function runRiftlightTree(h) {
     ctx = await launch(exe, { name: 'riftlight-tree', args: [] }, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
     await ctx.page.goto(`${BASE}tree.html?points=40`);
     await ctx.page.waitForFunction(() => window.__RIFT_TREE__?.view.debug().frames > 0, null, { timeout: 30000 });
-    const phone = await ctx.page.evaluate(() => window.__RIFT_TREE__.view.debug().hints);
+    const phone = await ctx.page.evaluate(() => window.__RIFT_TREE__.view.debug());
     // (a phone's narrow bar keeps the most useful hint: Tap twice: take)
-    check(phone.includes('tap') && !phone.includes('take') && !phone.includes('zoom'), `a phone: the bottom bar names a finger's taps before any touch, not clicks (${phone.join(', ')})`);
+    check(phone.hints.includes('tap') && !phone.hints.includes('take') && !phone.hints.includes('zoom'), `a phone: the bottom bar names a finger's taps before any touch, not clicks (${phone.hints.join(', ')})`);
+    check(phone.search === 'Find', `a phone: the search box names no key, a tap opens it (${phone.search})`);
+    await ctx.page.screenshot({ path: new URL('riftlight-tree-phone.png', OUT).pathname });
     check(ctx.logs.length === 0, `a phone: zero console errors/warnings${ctx.logs.length ? ':\n    ' + ctx.logs.join('\n    ') : ''}`);
   } catch (e) {
     check(false, `riftlight-tree crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);

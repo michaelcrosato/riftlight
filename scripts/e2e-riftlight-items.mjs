@@ -8,7 +8,8 @@
 //   one run through every window for its frame (drops, the inventory and a tooltip, the skill
 //   panel, Ilsa's gems, Brann's anvil, the stash) → the passive tree's canvas: a click on a node
 //   allocates it; real Escape closes it without the pause menu; P toggles it; real Q / E page round
-//   the character screens through the tree, whose bar names them → a loot label click
+//   the character screens through the tree, whose bar names them; with two pads only player 1's
+//   (the engine's input) moves the tree's cursor and takes a node → a loot label click
 //   after a GPU device loss → a portrait phone (390×844): every window and a tap's tooltip as
 //   frames, the tree's canvas fills the screen.
 //
@@ -146,6 +147,54 @@ export async function runRiftlightItems(h) {
     await step(2);
     rs = await st();
     check(rs.ui.length === 0, `P toggles the tree open and shut (ui ${rs.ui.join(',') || 'none'})`);
+    // two pads as the browser lists them, a couch guest's in slot 0 and player 1's in slot 1: the
+    // tree's view hears player 1's alone (the engine's input), never the first pad listed
+    const pads = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const engine = window.__PIXEL_ENGINE__;
+      const real = navigator.getGamepads;
+      const pad = (index, pressed = []) => ({ connected: true, mapping: 'standard', index, id: `pad ${index}`, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+      let listed = [pad(0), pad(1)];
+      navigator.getGamepads = () => listed;
+      const tap = (slot, b) => {
+        listed = [pad(0, slot === 0 ? [b] : []), pad(1, slot === 1 ? [b] : [])];
+        engine.step(1);
+        listed = [pad(0), pad(1)];
+        engine.step(1);
+      };
+      try {
+        engine.step(1);
+        rl.game.coop.join(0); // a couch guest on slot 0
+        tap(1, 12); // the d-pad on player 1's pad: the pad in use is slot 1
+        rl.press('KeyP');
+        const panel = rl.game.layer.find('tree');
+        const hover = () => panel.view.debug().hover;
+        const start = hover();
+        for (let i = 0; i < 3; i++) tap(0, 15);
+        const guest = hover();
+        for (let i = 0; i < 3; i++) tap(1, 15);
+        const p1 = hover();
+        const spent = panel.state.spent;
+        tap(0, 0);
+        engine.step(2);
+        const guestTook = panel.state.spent - spent;
+        tap(1, 0);
+        engine.step(2);
+        const p1Took = panel.state.spent - spent - guestTook;
+        const r = { device: engine.input.device, padIndex: engine.input.padIndex, start, guest, p1, guestTook, p1Took, ui: rl.state().ui };
+        rl.press('Escape');
+        return r;
+      } finally {
+        rl.game.coop.leaveAll();
+        navigator.getGamepads = real;
+        engine.step(1);
+      }
+    });
+    check(pads.device === 'pad' && pads.padIndex === 1 && pads.ui.join(',') === 'tree', `two pads: player 1 on slot 1, the tree open (${pads.device} ${pads.padIndex}, ui ${pads.ui.join(',')})`);
+    check(pads.guest === pads.start && pads.guestTook === 0, `the couch guest's pad (slot 0) neither moves the tree's cursor nor takes a node (${pads.guest}, +${pads.guestTook})`);
+    check(pads.p1 !== null && pads.p1 !== pads.start && pads.p1Took >= 1, `player 1's pad (slot 1) steps the tree's cursor to ${pads.p1} and Cross takes it (+${pads.p1Took})`);
+    rs = await st();
+    check(rs.ui.length === 0, `Escape closes the tree again (ui ${rs.ui.join(',') || 'none'})`);
     // the character screens' ring on a real keyboard: E round it from the inventory, through the
     // tree (its view takes the keyboard, but Q / E are the ring's, not its zoom), Q back onto it;
     // the tree's bar names them
