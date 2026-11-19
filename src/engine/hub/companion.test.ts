@@ -8,7 +8,19 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { COMPANION, withCompanion } from '../../../scripts/e2e-hub-companion.mjs';
 import { AudioManager } from '../audio/AudioManager';
+
+describe('a game page as 52in1’s Worker serves it (the e2e serves it so: withCompanion)', () => {
+  it('the companion first: at the top of <head>, else before the first <script>, else at the top of <body>; a tag in a comment is none', () => {
+    const page = '<!doctype html><html lang="en"><head>\n<meta charset="utf-8"><script>/*! aihub-session */</script></head><body></body></html>';
+    expect(withCompanion(page)).toBe(page.replace('<head>', `<head>${COMPANION}`));
+    const headless = '<!doctype html><!-- <head> <script> --><meta charset="utf-8"><script src="a.js"></script><body>';
+    expect(withCompanion(headless)).toBe(headless.replace('<script src', `${COMPANION}<script src`));
+    expect(withCompanion('<header>a</header><body class="x">b')).toBe(`<header>a</header><body class="x">${COMPANION}b`);
+    expect(withCompanion('plain text')).toBe('plain text');
+  });
+});
 
 /** A page's Web Audio as a browser's IDL has it, and the hub (the companion's parent): fresh each time (the companion patches it). */
 function browser(search: string) {

@@ -107,6 +107,10 @@
 //                 a page whose thread is stuck ends its run at its timeout with evidence of where, a
 //                 browser that dies fails only its run, a page whose renderer dies ends its run at once.
 //                 A failed run leaves what its page was doing in .scratch/hub/evidence/ (CI keeps it).
+//                 Then the page as 52in1 serves it, its companion script first, in a hub page of its
+//                 own on another origin (scripts/e2e-hub-companion.mjs), on a desktop and a phone:
+//                 settings and volumes, the wake band, the DualSense; and a game night's round,
+//                 hushed under the hub's cards until it starts.
 // world           Engine World in the page (scripts/e2e-world.mjs): every room renders, the GPU rooms'
 //                 readbacks, the gallery's and workshop's pictures, a pointer on the canvas, the
 //                 sandbox's localStorage, live play recorded and replayed. The rooms' gameplay, the

@@ -63,6 +63,40 @@ engine's one pad scheme, `KEYMAP`), `arena`, `lootlab` and `levellab` (Riftlight
 Riftlight's pad layout where they have a hero; their status lines are dev. lines). Nothing there is
 promised to a player, but each still plays on a pad.
 
+## In 52in1's frame
+
+52in1 never serves the page as built: the Worker on the games' address puts the hub's companion
+script first in it (`<script src="/lib/hub/companion.js">` at the top of `<head>`;
+`scripts/hub/companion.js`, vendored unmodified, its commit in `scripts/hub/harness/README.md`), and
+the hub's page speaks to it by postMessage (`hubFrame`): to the game `pads` {want}, `hush` {on},
+`settings`, `ds-input` {gyro, accel, touches}; from it `hello`, `wake`, `pads`, `hushed`, `ds-want`,
+`ds-light`, `ds-trigger`. What that means for Riftlight:
+
+- **The hush.** A game night's round (`?aihub=1`) loads under the hub's cards, and the companion
+  holds the game's AudioContext until the round starts. It knows the context by a source started in
+  it, and hears only `AudioScheduledSourceNode`'s `start`, which an AudioBufferSourceNode (every
+  engine sound) overrides: the engine starts a silent ConstantSourceNode as it makes its context
+  (docs/engine/audio.md), or the music would play on under the cards.
+- **Volumes.** The hub's master is the companion's gain in front of the speakers; music and effects
+  are the engine's buses (`engine.hubSettings`).
+- **The wake band.** A touch, or the mouse, in the top 90 CSS px brings the hub's bar back (`wake`).
+  On a touch page no tap target sits there (docs/game/ui.md), and a finger landing there is the
+  hub's: it neither swings, held, nor taps anything (`Riftlight.inWake`).
+- **The DualSense.** Its motion and touches come as `ds-input` once the game reads them (`ds-want`).
+
+**Checking it**: the `hub` e2e suite, after the harness (`scripts/e2e-hub-companion.mjs`), serves
+the built page as the Worker does (`withCompanion`) from 127.0.0.1, framed by a page of its own on
+localhost (another origin, as on 52in1) playing the hub's side (`hubSide`, as 52in1's
+`assets/js/ui/frames.js`). On a desktop and a 390×844 touch phone: hello and the pads; the settings
+in `engine.hubSettings`; the volumes, and a change applied live; the mouse, or a finger held, in the
+band wakes the hub each time and Riftlight does nothing with it (no panel, map, swing, move or
+press), while below it a finger wakes nothing and is the game's; no console errors. On the desktop a
+fake DualSense: its motion reaches `input.motion` (52in1's own Motion aim keeps off the right stick),
+a touchpad swipe pages the character screens, the light bar goes out. Then a game night: the
+vendored harness's parallel round for two with the hub's side in its page, hushed as it loads: a
+copy clicked under the cards keeps its context held, has its sound back once the round starts, and
+the harness's checks pass. `src/engine/hub/companion.test.ts` runs the real companion headless.
+
 ## The checks
 
 The script runs the catalogue's three checks on the hand-over page itself, and exits 1 when one

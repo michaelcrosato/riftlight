@@ -3,7 +3,8 @@
 // library (docs/game/session.md): a shared world co-op and versus, ghost, parallel and moments, on a
 // lossy network, with a host leaving and a server with no player of its own. One page offers every
 // mode (`npm run build:single`); `&mode=` and `&how=` pick the one a run plays, `&moment=` the moments.
-// Then a round of moments on a phone held upright with its touch controls: no ≡ in a round.
+// Then a round of moments on a phone held upright with its touch controls: no ≡ in a round. Then the
+// page as 52in1 serves it, its companion script first (scripts/e2e-hub-companion.mjs).
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -11,6 +12,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { WEBGPU_ARGS } from './browser.mjs';
+import { runCompanion } from './e2e-hub-companion.mjs';
 import { readHead } from './hub/head.mjs';
 import { isOnline, modesOf, parseMoments } from './hub/harness/round.js';
 
@@ -576,6 +578,9 @@ export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
     const round = await touchRound(await browsers.get(), `http://localhost:${port}/harness.html?game=${encodeURIComponent('riftlight.html?touch=1')}&mode=moments&moment=${offer.moments[0]}&players=1&play=8000&auto=1`);
     check(round.ok, `a round of moments on a phone with touch controls: ≡ hidden (${round.detail})`);
     await harnessChecks(browsers, dir, port, check);
+    await browsers.close();
+    // the page as 52in1 serves it, its companion first, in a hub's page and in a game night's round
+    await runCompanion({ exe, root, dir, port, check });
   } finally {
     await browsers.close();
     server.close();

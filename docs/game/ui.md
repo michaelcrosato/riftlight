@@ -135,7 +135,7 @@ the Map button (`TouchFrame.map`, `MAP_ICON`) takes ≡'s place: it presses M, r
 
 **The wake band is about taps, not pixels.** The hub's companion script
 ([`lib/hub/companion.js`](https://raw.githubusercontent.com/michaelcrosato/ai-hub/main/lib/hub/companion.js),
-its `onTouch` and `onMouse`) brings the hub's bar over the game on a touch or a mouse press less
+its `onTouch` and `onMouse`) brings the hub's bar over the game on a touch or a mouse move less
 than 90 CSS px from the top of the game's frame. So in 52in1 on a touch page nothing the game draws
 in the band may take a tap, while drawing there is fine. Two cases:
 
