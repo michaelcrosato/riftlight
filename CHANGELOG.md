@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.76.0
+
+- **52in1's hush now holds the engine's sound.** 52in1's companion script, first in every game page the hub serves, holds a game's AudioContext while the hub's cards are up (a game night's next round loads under them) and gives it back when the round starts. It recognises the context by a source started in it, but it only hooks `AudioScheduledSourceNode`'s `start`, and an AudioBufferSourceNode (every engine sound) has its own `start`. So the engine's context was never held, and a game's music played on under the cards. As `unlock` creates the context, `AudioManager` now starts and stops a silent ConstantSourceNode connected to nothing, so the companion sees the context: it is held under the cards, and on the wall the hub can hush it too. If a hush lifts while the companion's own suspend is still in flight, the context stays suspended until the next input brings it back. `src/engine/hub/companion.test.ts` runs the real companion against Web Audio shaped like a browser's.
+
 ## 0.75.0
 
 - **`touchDensity` / `touchScale`: the whole number of device pixels nearest the density.** It used to round up: a tie now goes to the bigger pixel, and the art is "about N CSS px a pixel" rather than "at least". Exactly 2 CSS px at DPR 1, 1.5, 2, 2.5, 3 and 3.5. At a fractional DPR the art takes the nearer whole device px, so a Pixel's DPR 2.625 takes 5 device px per art pixel (1.9 CSS px), not 6 (2.3). Held sideways it now draws about the rows a DPR 2 or 3 phone of its size does: 863×360 draws 454×189 (was 378×158), 923×340 under Chrome's bar 485×179 (was 404×149), 882×344 464×181 (was 386×151), 915×412 481×217 (was 402×181). It is still a pure function of `Recording.view` and `Recording.density`, so a replay frames the same way. A recording made at a fractional DPR by an older engine frames differently when replayed (`Recording.version` says a different engine may not replay the same).
