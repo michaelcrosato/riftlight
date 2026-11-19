@@ -101,10 +101,10 @@ const STRIP = { w: 66, min: 46, h: 13, gap: 2 } as const;
 const ORB_R = 22;
 
 /**
- * The least a corner map shrinks to (`hudGeometry`: a phone held sideways, in 52in1 or too short
- * for it above the controls), its frame aside. Below the hub's wake band, a tap target: `h` rows where the screen's CSS scale makes that
- * and its frame a thumb across (`THUMB`), more where it doesn't (18 at a phone's two CSS px per art
- * pixel); at the top, in the band (no tap target there), these.
+ * The least a corner map shrinks to (`hudGeometry`: a phone held sideways, in 52in1 or too short for
+ * it above the controls), its frame aside. Below the hub's wake band, a tap target: `h` rows where
+ * the screen's CSS scale makes that and its frame a thumb across (`THUMB`), more where it doesn't (18
+ * at a phone's two CSS px per art pixel); at the top (in the band, or on the game's own page), these.
  */
 const MAP_LEAST = { w: 44, h: 16 } as const;
 
