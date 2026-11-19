@@ -396,6 +396,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** The engine runs this game now: `window.__RIFTLIGHT__` for tools and agents. */
   ready(): void {
     this.disposeApi ??= installApi(this);
+    // the page's touch controls are made after setup (`Engine.start`), shown: sync them now, so a
+    // 52in1 round's loading screen (no frame runs till its level is built) shows none, ≡ included
+    this.syncTouch();
   }
 
   dispose(ctx: GameContext): void {

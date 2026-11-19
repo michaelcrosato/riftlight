@@ -680,3 +680,22 @@ describe('a phone in 52in1: a finger in the hub’s wake band', () => {
     T,
   );
 });
+
+describe('the page’s touch controls are made after setup', () => {
+  it(
+    'so ready() syncs them: shown as they are made, they step aside at once off play (the title; a 52in1 round loading its level, ≡ included)',
+    async () => {
+      h?.engine.dispose();
+      h = await headlessRiftlight({ seed: 3, viewport: { width: 390, height: 844, dpr: 3 }, options: { touch: true } });
+      // as Engine.start makes them after setup: shown, until the game says otherwise
+      const shown: boolean[] = [];
+      const touch = { visible: true, show: (on: boolean) => void shown.push(on), set: () => {}, giveWay: () => {} };
+      (h.engine as unknown as { touch: typeof touch }).touch = touch;
+      expect(h.game.screen, 'off play').not.toBe('level');
+      h.game.ready();
+      expect(shown, 'ready() hides them off play').toEqual([false]);
+      (h.engine as unknown as { touch: null }).touch = null;
+    },
+    T,
+  );
+});
