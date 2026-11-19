@@ -240,7 +240,7 @@ export { Microphone } from './hub/microphone';
 export { lerpAngle, RemoteTrack, type RemoteTrackOptions } from './hub/track';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, TouchFollow, type TouchButton, type TouchButtonState, type TouchControlsOptions, type TouchCorner, type TouchStick } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
-export { ADAPTIVE_ASPECT, PHONE_SHORT_SIDE, RESOLUTIONS, TOUCH_ROWS_SIDE, computeFraming, frameView, touchRows, touchScale, type AspectMode, type Framing, type Resolution, type Viewport } from './framing';
+export { ADAPTIVE_ASPECT, PHONE_SHORT_SIDE, RESOLUTIONS, computeFraming, frameView, touchScale, type AspectMode, type Framing, type Resolution, type Viewport } from './framing';
 export { QUALITY, QUALITY_LEVELS, FrameLimiter, type QualityLevel, type QualityOption, type QualitySettings } from './quality';
 export { assetProgress, preloadModels } from './assets';
 export { LoadingScreen } from './LoadingScreen';

@@ -94,13 +94,13 @@ and `wheel`; from its top each time it shows). Their hints follow the device in 
 
 On a phone Riftlight draws its art at about two CSS pixels per art pixel (`touchDensity: 2`;
 422×195 on an 844×390 landscape phone at DPR 2 or 3, 130×282 in portrait), so the HUD and the
-panels lay out in about 195 rows in landscape, 170 or more. On a page with touch controls every panel gets a
+panels lay out in about 195 rows in landscape. On a page with touch controls every panel gets a
 thumb's height for what a finger presses (`UiLayer.tap` = `tapArt(renderer)`: 44 CSS px, 22 art
 rows in landscape, 15 in portrait; `Panel.fit`'s third argument): menu rows, the character sheet's
 tabs and rows, the codex's list, the loot window's and the death recap's buttons. A menu never
 hides an entry it could show (`Menu.plan`): where its thumb-tall rows would scroll, the title and
 pause menus lay their buttons out as two columns of tiles (`MenuOptions.grid`: a landscape phone,
-the tiles narrower than the menu on a small one, 379×214, while each holds the widest label; the
+the tiles narrower than the menu on a small one, 284×160, while each holds the widest label; the
 d-pad moves through the grid, passing over a disabled tile), and any menu shrinks its rows to
 its room when that keeps them all in view (the save slots, the tuning, the rift keeper's depths on
 a landscape phone); one that scrolls even so (the settings, the languages) keeps its thumb-tall

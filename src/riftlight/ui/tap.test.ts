@@ -126,19 +126,18 @@ describe('a thumb on the panels', () => {
     expect(menu.rects.get('resume')!.h).toBe(14);
   });
 
-  it('a small landscape phone (568×320: 379×214 art at 1.5 CSS px, its least 170 rows; a room 367 wide) gets the pause menu\'s grid too, its tiles narrowed to the room: every entry in view', () => {
+  it('a small landscape phone (568×320: 284×160 art, a room 272 wide) gets the pause menu\'s grid too, its tiles narrowed to the room: every entry in view', () => {
     const v = view(568, 320, 2, true);
-    expect([v.framing.artWidth, v.framing.artHeight]).toEqual([379, 214]);
+    expect([v.framing.artWidth, v.framing.artHeight]).toEqual([284, 160]);
     const tap = tapArt(v);
-    expect(tap, 'a thumb: 44 CSS px at 1.5 an art pixel').toBe(30);
     const menu = pauseMenu(host());
     // the room inside the frame, the legend's rows under it (`UiLayer.draw`)
-    menu.fit(367, 177, tap);
+    menu.fit(272, 123, tap);
     expect(menu.columns, 'two columns of tiles narrower than the menu').toBe(2);
-    expect(menu.size.w).toBeLessThanOrEqual(367);
-    expect(menu.size.h).toBeLessThanOrEqual(177);
+    expect(menu.size.w).toBeLessThanOrEqual(272);
+    expect(menu.size.h).toBeLessThanOrEqual(123);
     const r = { x: 6, y: 16, w: menu.size.w, h: menu.size.h };
-    const { ui, texts } = canvas(379, 214);
+    const { ui, texts } = canvas(284, 160);
     menu.draw(ui, r);
     const buttons = menu.items().filter((w) => w.kind === 'button');
     for (const b of buttons) {
