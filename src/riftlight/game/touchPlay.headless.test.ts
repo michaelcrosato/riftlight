@@ -873,10 +873,17 @@ describe('a touch session replays', () => {
         rl.spawn({ seed: 6, x: p.x + 4, z: p.z + 3 });
         engine.step(2);
         await engine.restore(await engine.snapshot()); // the recording starts at this moment
-        engine.input.analog.x = 0.6; // the stick, then let go: the auto attack and the aim assist decide
-        engine.step(40);
-        engine.input.analog.x = 0;
-        engine.step(60);
+        const swung = attacks(
+          () => {
+            engine.input.analog.x = 0.6; // the stick, then let go: the auto attack and the aim assist decide
+            engine.step(40);
+            engine.input.analog.x = 0;
+            engine.step(60);
+          },
+          engine,
+          game,
+        );
+        expect(swung.some(Boolean), 'live: the auto attack swung, no button held (what the replay must repeat)').toBe(true);
         const live = engine.fingerprint();
         const rec = JSON.parse(JSON.stringify(engine.recording())) as Parameters<typeof engine.replay>[0];
         await engine.replay(rec, () => engine.loadGame(makeRiftlight(game.store, engine.seed)));
