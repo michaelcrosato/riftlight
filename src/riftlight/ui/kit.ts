@@ -297,6 +297,23 @@ export function wrap(text: string, width: number, scale = 1): string[] {
 }
 
 /**
+ * `text`, parts joined by `separator` (a row of hints, the character sheet's 'Level 7 · deepest
+ * 12'), in lines no wider than `width` (`measure`: the font it is drawn in): broken between parts,
+ * as many as fit on each line (a part wider than a line wraps inside), unless that takes more lines
+ * than breaking anywhere the language breaks words (a small phone's few rows of room).
+ */
+export function wrapParts(text: string, width: number, measure: (s: string) => number = textWidthPx, separator = ' · '): string[] {
+  const out: string[] = [];
+  for (const part of text.split(separator)) {
+    const last = out.at(-1);
+    if (last !== undefined && measure(last + separator + part) <= width) out[out.length - 1] = last + separator + part;
+    else out.push(...wrapText(part, width, measure));
+  }
+  const words = wrapText(text, width, measure);
+  return out.length <= words.length ? out : words;
+}
+
+/**
  * A row of parts (control hints, a lab's key help) joined by `separator`, in lines of at most
  * `width` art pixels at `scale`: broken between parts, as many as fit on each line; a part wider
  * than a line wraps inside (`wrap`). A narrow screen (a phone in portrait) gets it on several lines.

@@ -13,7 +13,7 @@ import type { Penalty } from '../game/progress';
 import { type Recap, recapTip } from '../game/recap';
 import { lang, lineKey, t } from '../lang';
 import { talkText } from '../town/npcs';
-import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap, wrapTo } from './kit';
+import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap, wrapParts, wrapTo } from './kit';
 import type { LegendItem } from './legend';
 
 /** A number in the player's language (12,500 · 12.500), `digits` after the point. */
@@ -84,6 +84,16 @@ const ROW = 13;
 /** A row whose label takes two rows of the normal font (a narrow sheet). */
 const TWO_ROW = 20;
 
+/**
+ * A narrow sheet's header in rows `width` wide: broken between its parts where it is long ('Level
+ * 7' / 'deepest 12', never a number on its own), on at most three rows (a long language's), cut on
+ * the last.
+ */
+function headerRows(text: string, width: number): string[] {
+  const rows = wrapParts(text, width);
+  return rows.length <= 3 ? rows : wrapTo(text, width, 3);
+}
+
 export class CharacterSheet implements Panel {
   readonly id = 'character';
   get title(): string {
@@ -113,11 +123,11 @@ export class CharacterSheet implements Panel {
   /**
    * The tabs' height, the list's first text row (from the top), a row's height (a thumb's on a
    * touch screen, as tall as the room lets the longest page be) and the header's rows (a narrow
-   * sheet wraps a long one onto two).
+   * sheet's long one on two or three: `headerRows`).
    */
   private get metrics(): { tabH: number; listTop: number; rowH: number; header: string[] } {
     const tabH = Math.max(11, this.tap);
-    const header = this.narrow ? wrapTo(this.header(), this.width - 4, 2) : [this.header()];
+    const header = this.narrow ? headerRows(this.header(), this.width - 4) : [this.header()];
     const listTop = 17 + tabH + (header.length - 1) * 9;
     const most = Math.max(...SHEET_PAGES.map((p) => p.stats.length));
     const fits = Math.floor((this.room.h - listTop - (this.narrow ? 72 : 4)) / most);
@@ -225,7 +235,7 @@ export class CharacterSheet implements Panel {
     const sheet = this.sheet();
     const narrow = this.narrow;
     const { tabH, listTop, rowH, header } = this.metrics;
-    // the header (a narrow sheet's on two rows where it is long: 'Level 7 · Deepest 12'), then the pages' tabs
+    // the header (a narrow sheet's on rows of its parts where it is long: 'Level 7' / 'deepest 12'), then the pages' tabs
     header.forEach((line, i) => ui.text(r.x + 2, r.y + 2 + i * 9, clip(line, r.w - 4, (s) => ui.measure(s)), { color: 'sand' }));
     this.drawTabs(ui, r, tabH, r.y + 12 + (header.length - 1) * 9);
     this.rows = [];

@@ -6,11 +6,12 @@
 // scroll bar; a narrow character sheet turns its pages with a pager instead of cutting their
 // names; a mouse's or a pad's screen keeps its layout.
 import { describe, expect, it } from 'vitest';
-import { textWidthPx } from '../../engine';
+import { Lang, textWidthPx } from '../../engine';
 import { computeFraming, RESOLUTIONS, touchScale } from '../../engine/framing';
 import { StatSheet } from '../core/mods';
 import { RIFTLIGHT_OPTIONS } from '../index';
-import { lineKey, t } from '../lang';
+import { installLanguage, lineKey, riftlightLines, t } from '../lang';
+import { riftlightTranslations } from '../lang/translations';
 import { type Rect, UiCanvas } from './kit';
 import { tapArt, TAP_CSS, UiLayer } from './layer';
 import { Menu, type Widget } from './menu';
@@ -62,8 +63,8 @@ const host = (o: { last?: number | null; languages?: number; opened?: string[]; 
 
 const inside = (a: Rect, b: Rect) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
 
-/** `text` drawn whole among `drawn` (in order): on one row, or on rows one after another, none cut. */
-const whole = (drawn: readonly string[], text: string): boolean => drawn.some((_, i) => [1, 2, 3].some((n) => i + n <= drawn.length && drawn.slice(i, i + n).join(' ') === text));
+/** `text` drawn whole among `drawn` (in order): on one row, or on rows one after another (broken at a space or between its parts at a ' · '), none cut. */
+const whole = (drawn: readonly string[], text: string): boolean => drawn.some((_, i) => [1, 2, 3].some((n) => i + n <= drawn.length && [' ', ' · '].some((gap) => drawn.slice(i, i + n).join(gap) === text)));
 
 describe('a thumb on the panels', () => {
   it('a target is about 44 CSS px on a page with touch controls, in either orientation; none elsewhere', () => {
@@ -335,6 +336,42 @@ describe('a thumb on the panels', () => {
       expect(slots.rects.get(b.id), `${b.id} shows`).toBeDefined();
       expect(whole(texts.map((x) => x.s), b.label), `${b.id}: ${b.label} whole`).toBe(true);
     }
+  });
+
+  it('on a 360×800 phone the character sheet breaks a long header between its parts (Level 4 / deepest 1), never leaving a number alone, in every stored language', () => {
+    const translations = riftlightTranslations();
+    const bad: string[] = [];
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        for (const [level, depth] of [
+          [4, 1],
+          [7, 12],
+          [23, 140],
+        ] as const) {
+          const header = t('character.subtitle', { level, depth });
+          const sheet = new CharacterSheet(() => new StatSheet({}), () => header);
+          sheet.fit(108, 241, 15);
+          const { ui, texts } = canvas(120, 267);
+          const r = { x: 6, y: 16, w: sheet.size.w, h: sheet.size.h };
+          sheet.draw(ui, r);
+          // its rows: drawn first, 9 apart from its top, over the pages' tabs
+          const rows: string[] = [];
+          for (const x of texts) if (x.y === r.y + 2 + rows.length * 9) rows.push(x.s);
+          else break;
+          const parts = header.split(' · ');
+          if (code === 'en' && level === 4 && JSON.stringify(rows) !== JSON.stringify(['Level 4', 'deepest 1'])) bad.push(`en: ${JSON.stringify(rows)}`);
+          // where each of its parts fits a row, every row is whole parts ('·' between them)
+          if (parts.length > 1 && parts.every((x) => textWidthPx(x) <= r.w - 4) && rows.join(' · ') !== header) bad.push(`${code}: ${JSON.stringify(rows)} for "${header}"`);
+          // and none cut
+          const bare = (s: string) => s.replace(/[\s·]/g, '');
+          if (bare(rows.join('')) !== bare(header)) bad.push(`${code}: ${JSON.stringify(rows)} cuts "${header}"`);
+        }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(bad).toEqual([]);
   });
 
   it('a footer longer than its menu wraps whole: in the normal font on a TV (World\'s room list at 1920×1080), in the mini font on a phone; the menu keeps room for its longest', () => {

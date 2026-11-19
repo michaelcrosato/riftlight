@@ -661,8 +661,8 @@ export async function runRiftlightPhone(h, orientation) {
     ctx = null;
 
     if (portrait) {
-      // a 360×800 phone (120 art columns): the character sheet's labels and header, the slots'
-      // entries and the codex's names whole (a long one on two rows), never cut with a '.'
+      // a 360×800 phone (120 art columns): the character sheet's labels and header and the slots'
+      // entries whole (a long one on two rows, the header broken between its parts), never cut with a '.'
       ctx = await launch(exe, s, { viewport: { width: 360, height: 800 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
       const page360 = ctx.page;
       await page360.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
@@ -685,8 +685,8 @@ export async function runRiftlightPhone(h, orientation) {
           window.__PIXEL_TEXT_LOG__ = undefined;
           return drawn;
         };
-        /** `text` drawn whole: on one row, or on rows one after another. */
-        const whole = (drawn, text) => drawn.includes(text) || drawn.some((row) => row && text.startsWith(row) && /^\s/.test(text.slice(row.length)) && whole(drawn, text.slice(row.length).trimStart()));
+        /** `text` drawn whole: on one row, or on rows one after another (broken at a space, or between parts at a ' · '). */
+        const whole = (drawn, text) => drawn.includes(text) || drawn.some((row) => row && text.startsWith(row) && /^\s/.test(text.slice(row.length)) && whole(drawn, text.slice(row.length).trimStart().replace(/^·\s+/, '')));
         const cut = [];
         const g = rl.game;
         g.openPanel('character');

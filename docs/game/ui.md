@@ -106,7 +106,8 @@ a landscape phone); one that scrolls even so (the settings, the languages) keeps
 rows and shows a scroll bar beside them. On a 360 px phone (120 art columns) nothing is cut: a
 narrow menu's button too narrow for its label takes two rows (`UiCanvas.button` wraps a label in a
 button two rows tall: the slots, Engine World's room list), and the narrow character sheet wraps a
-long stat label and its header. The phone's codex opens an entry as the finger lifts on its row
+long stat label and breaks its header between its parts (Level 7 / deepest 12: `wrapParts`, as the
+showcase's hint rows). The phone's codex opens an entry as the finger lifts on its row
 (never on the press), so a swipe from the list closes the codex. A mouse's or a pad's screen
 keeps its layout (`tap` 0), whatever device was used last. Hints name the device in use, never the screen's width: the tree's
 bottom bar (`TreeViewOptions.device`: Drag pan · Pinch zoom · Tap twice: take · Hold refund on a
