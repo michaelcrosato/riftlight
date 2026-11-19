@@ -13,7 +13,9 @@
  * Input: while open the TreeView owns the keyboard (it captures keys, so Escape / P close
  * it and never reach the pause menu), the mouse and touch. The pad is player 1's from the
  * engine's input (`ctx.input`: the pad in use through its remaps, never a couch guest's;
- * recorded), handed to the view each frame (`draw`): its sticks, triggers, d-pad and ✕ □ △. The
+ * recorded), handed to the view each frame (`draw`): its sticks, triggers, d-pad and ✕ □ △. Opened
+ * with the pad in use, the pad's cursor starts on the node hovered last as a tree closed (the
+ * port keeps it), else on the start the allocation grows from (`TreeCursor.padStart`). The
  * shell's `back` (pad B, the agent API) closes it through the panel stack. Q / E are the
  * shell's (`pages`: the game hears them and pages round the character screens, as L1 / R1 do,
  * which the view never reads); its bottom bar names them. What the
@@ -65,6 +67,8 @@ export class TreePanel implements Panel {
   constructor(
     readonly host: PanelHost,
     readonly respec: boolean,
+    /** The node hovered last as a tree closed (the port's, kept from one opening to the next): the pad's cursor starts there (`open`). */
+    private readonly memory: { hover: string | null } = { hover: null },
   ) {
     this.title = respec ? 'Passive tree · respec' : 'Passive tree';
     if (respec) this.ring = false;
@@ -108,9 +112,14 @@ export class TreePanel implements Panel {
     registerTreeSounds(ctx.audio);
     // the view is the page's (a canvas over the game); headless the actions apply without one
     const container = ctx.engine.renderer.container;
+    // opened with the pad in use (Pause → Passive tree, L1 / R1 from another screen, R2 at Oru):
+    // its cursor on the node hovered last, else the start, so the cross and the tooltip show at
+    // once and Cross takes that node (the device is the engine's: recorded, so a replay agrees)
+    const pad = ctx.engine.controls.device === 'pad';
     if (!container) {
       const res = ctx.engine.renderer.resolution;
       this.nav = new TreeCursor(tree, res.width, res.height);
+      if (pad) this.nav.padStart(this.memory.hover, state.allocated);
       return;
     }
     this.view = new TreeView({
@@ -135,6 +144,7 @@ export class TreePanel implements Panel {
       defer: (action) => this.send(action),
     });
     this.view.open();
+    if (pad) this.view.padStart(this.memory.hover);
   }
 
   /** What the pad did to the tree is sent, as the view sends what the mouse did: done when it arrives (`draw`), recorded. */
@@ -156,6 +166,7 @@ export class TreePanel implements Panel {
 
   close(): void {
     this.closing = true;
+    this.memory.hover = this.view?.hovered ?? this.nav?.hover ?? this.memory.hover;
     this.view?.dispose();
     this.view = null;
     this.nav = null;
@@ -214,6 +225,8 @@ export class TreePanel implements Panel {
 }
 
 export function realTreePort(): TreePort {
+  /** The node hovered last as a tree closed (`TreePanel.memory`). */
+  const memory = { hover: null as string | null };
   return {
     mods(allocated: readonly string[]): readonly Mod[] {
       return treeMods(allocated);
@@ -222,7 +235,7 @@ export function realTreePort(): TreePort {
       return pointBudget(level, deepest).total;
     },
     view(host: PanelHost, options: { respec: boolean }): Panel {
-      return new TreePanel(host, options.respec);
+      return new TreePanel(host, options.respec, memory);
     },
   };
 }

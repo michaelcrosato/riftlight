@@ -67,6 +67,8 @@ group `items`): opening one closes the others, and I closes any of them. The pas
 the keyboard while open (Escape / P close it and never reach the pause menu) and its pointer; its
 pad is player 1's from `ctx.input` (never a couch guest's; recorded), handed over each frame
 (`TreeView.pad`; headless a `TreeCursor`); pad B and the agent API's `back` come through the shell.
+Opened with the pad in use, its cursor starts on the node hovered last, else on the start the
+allocation grows from (`TreeCursor.padStart`), so the tooltip shows and Cross takes it at once.
 
 | view | from | keys |
 | --- | --- | --- |

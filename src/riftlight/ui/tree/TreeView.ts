@@ -374,6 +374,21 @@ export class TreeView {
     if (ask.moved || ask.stats) this.dirty = true;
   }
 
+  /**
+   * Opened with the pad in use (the host's call, after `open`): the pad's cursor on `id` (the node
+   * hovered last), else on the start the allocation grows from, its tooltip shown and Cross on it.
+   */
+  padStart(id: string | null): void {
+    if (!this.opened) return;
+    this.nav.padStart(id, this.stateRef.allocated);
+    this.dirty = true;
+  }
+
+  /** The node under the cursor now (the host keeps it, so the pad's cursor starts there next time: `padStart`). */
+  get hovered(): string | null {
+    return this.hover;
+  }
+
   /** The player did something to the tree: hand it to `defer`, or do it now. */
   private act(action: TreeAction): void {
     if (this.options.defer) this.options.defer(action);
