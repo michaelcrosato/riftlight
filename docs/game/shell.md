@@ -82,8 +82,8 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   light bar (`lightFor`) is the town's orange, the hero's life in a level (green, amber, red pulsing
   under a quarter; red in a boss fight; plum dead), the hub's own on the title and in a showcase
   mode. R2 interacts: with something in reach on the pad, its adaptive trigger is a latch
-  (`LATCH`, `syncLatch`) that pushes back just before the press lands and clicks halfway down,
-  held through that pull till R2 is up. The portal and a loud drop's chime play on the `speaker`
+  (`LATCH`, `syncLatch`) pushing back just before the press lands, clicking halfway, held
+  through that pull till R2 is up. The portal and a loud drop's chime play on the `speaker`
   bus (the controller's, when the player allows it).
 - **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
   arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
