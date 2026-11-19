@@ -181,15 +181,25 @@ describe("the settings' engine page", () => {
     expect([chosen.voice, voice().get!()], 'it doesn’t change').toEqual([undefined, false]);
     mic.micLater = true;
     expect(seen(), 'allowed since the game opened: open it again').toEqual([false, true, t('menu.settings.voice.later')]);
-    Object.assign(mic, { present: false, micLater: false });
-    expect(seen(), 'outside 52in1').toEqual([false, true, t('menu.settings.voice.hub')]);
-    Object.assign(mic, { present: true, micAllowed: true });
+    Object.assign(mic, { micLater: false, micAllowed: true });
     expect(seen(), 'allowed: on, its hint').toEqual([true, false, t('menu.settings.voice.hint', { skill: skillName(SHOUT_SKILL) })]);
     expect(voice().hint).toBe('Shout to use War Cry');
     voice().set!(false as never);
     expect([chosen.voice, voice().get!()]).toEqual([false, false]);
     voice().set!(true as never);
     expect([chosen.voice, voice().get!()]).toEqual([true, true]);
+  });
+
+  it('outside 52in1 the Controller page has no Voice row, as it has no motion rows; the Controller button says what its page holds', () => {
+    const { dualsense, mic, h } = engineHost();
+    const host = { ...(h as object), openMenu: () => {}, applySettings: () => {} } as never;
+    const page = () => [controllerMenu(host).items().map((w) => (w as Row).id), row(settingsMenu(host), 'controller').hint];
+    expect(page(), 'in 52in1: the voice').toEqual([['padGlyphs', 'vibration', 'voice'], 'Button prompts, vibration, voice']);
+    dualsense.motion = true;
+    expect(page(), 'and motion aim').toEqual([['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice'], 'Button prompts, vibration, motion aim, voice']);
+    Object.assign(dualsense, { motion: false });
+    Object.assign(mic, { present: false });
+    expect(page(), 'outside 52in1: neither').toEqual([['padGlyphs', 'vibration'], 'Button prompts, vibration']);
   });
 
   it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its rows', () => {
@@ -201,9 +211,11 @@ describe("the settings' engine page", () => {
         installLanguage(new Lang(riftlightLines(), translations, { code }));
         const { dualsense, mic, h } = engineHost();
         const host = { ...(h as object), openMenu: () => {}, applySettings: () => {} } as never;
-        // the Voice row's hint: its own while allowed, else 52in1's line (where it allows it, open the game again, it needs 52in1)
+        // the Voice row's hint: its own while allowed, else 52in1's line (where it allows it, open the
+        // game again); the Controller button's: with motion aim and the voice, the voice, neither (outside 52in1)
         const voice = { allowed: { micAllowed: true }, allow: {}, later: { micLater: true }, hub: { present: false } };
-        for (const [id, motion, hub] of [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false], ...Object.keys(voice).map((k) => ['voice', true, k])] as [string, boolean, keyof typeof voice | undefined][]) {
+        const cases = [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false], ['controller', false, 'hub'], ...['allowed', 'allow', 'later'].map((k) => ['voice', true, k])] as [string, boolean, keyof typeof voice | undefined][];
+        for (const [id, motion, hub] of cases) {
           dualsense.motion = motion;
           Object.assign(mic, { present: true, micAllowed: false, micLater: false }, hub ? voice[hub] : {});
           const menu = id === 'controller' ? settingsMenu(host) : controllerMenu(host);
