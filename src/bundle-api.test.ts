@@ -1,8 +1,9 @@
 // The kit's API.md (scripts/bundle/api.mjs) says every export whole: an agent outside this repo
 // reads it for exact names (README: "every export with its signature and doc"), so no doc is cut
-// mid-sentence, no code table in a doc loses its rows, and no type reads `... 4 more ...`
-// (KEYMAP's pad buttons were cut off both ways). A small program of long docs and long types, run
-// through the same generator the bundle uses.
+// mid-sentence or after its first paragraph (Engine.loadGame's unload contract, Hud.legend's
+// example), no code table in a doc loses its rows, and no type reads `... 4 more ...` (KEYMAP's
+// pad buttons were cut off both ways). A small program of long docs and long types, run through
+// the same generator the bundle uses.
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,6 +37,15 @@ export const KEYS = { ${ACTIONS.join(', ')} } as const;
 export class Thing {
   /** ${long(8, 'THE MEMBER DOC ENDS HERE.')} */
   wide = { ${ACTIONS.join(', ')} };
+  /**
+   * ${long(3, 'THE FIRST PARAGRAPH ENDS HERE.')}
+   *
+   * THE SECOND PARAGRAPH: what goes and what stays,
+   * over two lines.
+   *
+   *   thing.go(1); // THE MEMBER'S EXAMPLE
+   */
+  go(n: number): void {}
   constructor(${Array.from({ length: 10 }, (_, i) => `argumentNumber${i}: string`).join(', ')}) {}
 }
 
@@ -67,6 +77,12 @@ describe("the kit's API.md", () => {
       expect(md, end).toContain(end);
     }
     expect(md).not.toMatch(/…/);
+  });
+
+  it("writes a member's doc whole: every later paragraph under its bullet, an example as written", () => {
+    const item = md.slice(md.indexOf('- `go(n: number): void`: ')).split(/\n(?=- |#)/)[0]!; // up to the next member or entry
+    expect(item).toContain('THE FIRST PARAGRAPH ENDS HERE.\n\n  THE SECOND PARAGRAPH: what goes and what stays,\n  over two lines.\n\n');
+    expect(item).toContain("\n    thing.go(1); // THE MEMBER'S EXAMPLE");
   });
 
   it('writes every type and signature whole (no "... 4 more ...")', () => {
