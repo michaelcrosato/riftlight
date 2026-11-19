@@ -2,7 +2,8 @@
 // comment, grouped by subsystem, generated from the TypeScript program (never out of date).
 // Used by scripts/bundle.mjs; the program is the one that emits the bundle's .d.ts files.
 // Nothing is cut: every signature and type whole (no `... 4 more ...`), every doc as written, its
-// code tables and examples too (a member's later paragraphs indented under its bullet).
+// code tables and examples too (a member's later paragraphs indented under its bullet), a
+// constructor's doc on its `new X(...)` bullet, and each `@param`, `@returns` and `@remarks` tag.
 // src/bundle-api.test.ts holds it to that.
 import ts from 'typescript';
 
@@ -34,6 +35,8 @@ const LIBRARIES = {
 };
 
 const oneLine = (s) => s.replace(/\s+/g, ' ').trim();
+/** The doc tags API.md writes out (`@internal` keeps a name out instead; other tags are not the engine's). */
+const TAGS = new Set(['param', 'returns', 'return', 'remarks']);
 /**
  * A member's doc for its bullet: the first paragraph on the bullet's line, each later one (the
  * rest of a contract, an example) beneath it as written, indented so it stays the member's item.
@@ -64,6 +67,21 @@ export function generateApi(program, entryFile, srcDir, { version, build }) {
   const params = (decl) => decl.parameters.map(param).join(', ');
   /** `@internal` in a doc comment keeps a public member out of the API (state the engine shares with itself). */
   const internal = (sym) => sym.getJsDocTags(checker).some((t) => t.name === 'internal');
+  /**
+   * A doc's `@param`, `@returns` and `@remarks` tags, a `name: text` line each (`- \`groundY\`:
+   * world height ...`, `- returns: ...`), as written (a later paragraph indented under its line).
+   */
+  const tagLines = (sym) =>
+    (sym?.getJsDocTags(checker) ?? []).flatMap((tag) => {
+      if (!TAGS.has(tag.name)) return [];
+      const parts = tag.text ?? [];
+      const at = parts.findIndex((p) => p.kind === 'parameterName');
+      const name = tag.name === 'param' && at >= 0 ? `\`${parts[at].text}\`` : tag.name === 'return' ? 'returns' : tag.name;
+      const text = ts.displayPartsToString(tag.name === 'param' && at >= 0 ? parts.slice(at + 1) : parts).trim();
+      return [`- ${name}${text ? `: ${memberDoc(text)}` : ''}`];
+    });
+  /** `lines` indented under a bullet (a member's or a constructor's tags). */
+  const under = (lines) => lines.map((l) => l.replace(/^/gm, '  '));
   const ret = (decl) => {
     if (decl.type) return oneLine(decl.type.getText());
     const sig = checker.getSignatureFromDeclaration(decl);
@@ -86,7 +104,7 @@ export function generateApi(program, entryFile, srcDir, { version, build }) {
       // an initialised property without a type annotation: say what it is from the checker
       sig = `${isStatic}${ro}${m.name}${opt}: ${typeText(decl.type, m, decl)}`;
     } else return null;
-    return `- \`${sig}\`${d ? `: ${d}` : ''}`;
+    return [`- \`${sig}\`${d ? `: ${d}` : ''}`, ...under(tagLines(m))].join('\n');
   }
 
   function entryFor(sym) {
@@ -103,12 +121,19 @@ export function generateApi(program, entryFile, srcDir, { version, build }) {
       return { section: 'three.js and Rapier', name, text: `### ${name}\n\n${what}\n` };
     }
     const out = [];
+    const tags = tagLines(target);
     if (ts.isClassDeclaration(decl)) {
       out.push(`### class ${name}`, '');
       if (d) out.push(d, '');
+      if (tags.length) out.push(...tags, '');
       const ctor = decl.members.find((m) => ts.isConstructorDeclaration(m) && isPublic(m));
       const lines = [];
-      if (ctor) lines.push(`- \`new ${name}(${params(ctor)})\``);
+      if (ctor) {
+        // the constructor's own doc and tags (what its arguments are) on its bullet
+        const sig = target.members?.get('__constructor');
+        const cd = sig ? memberDoc(doc(sig)) : '';
+        lines.push([`- \`new ${name}(${params(ctor)})\`${cd ? `: ${cd}` : ''}`, ...under(tagLines(sig))].join('\n'));
+      }
       for (const m of [...(target.exports?.values() ?? []), ...(target.members?.values() ?? [])]) {
         if (m.flags & ts.SymbolFlags.Prototype || m.name === '__constructor') continue;
         const l = member(m);
@@ -118,6 +143,7 @@ export function generateApi(program, entryFile, srcDir, { version, build }) {
     } else if (ts.isInterfaceDeclaration(decl)) {
       out.push(`### interface ${name}`, '');
       if (d) out.push(d, '');
+      if (tags.length) out.push(...tags, '');
       for (const m of target.members?.values() ?? []) {
         const l = member(m);
         if (l) out.push(l);
@@ -125,17 +151,21 @@ export function generateApi(program, entryFile, srcDir, { version, build }) {
     } else if (ts.isTypeAliasDeclaration(decl)) {
       out.push(`### type ${name}`, '', '```ts', `type ${name} = ${oneLine(decl.type.getText())}`, '```');
       if (d) out.push('', d);
+      if (tags.length) out.push('', ...tags);
     } else if (ts.isFunctionDeclaration(decl)) {
       const sigs = (target.declarations ?? []).filter(ts.isFunctionDeclaration).filter((f) => !f.body || (target.declarations ?? []).length === 1);
       out.push(`### ${name}()`, '', '```ts', ...sigs.map((f) => `function ${name}(${params(f)}): ${ret(f)}`), '```');
       if (d) out.push('', d);
+      if (tags.length) out.push('', ...tags);
     } else if (ts.isVariableDeclaration(decl)) {
       const t = decl.type ? oneLine(decl.type.getText()) : typeString(checker.getTypeOfSymbolAtLocation(target, decl));
       out.push(`### ${name}`, '', '```ts', `const ${name}: ${t}`, '```');
       if (d) out.push('', d);
+      if (tags.length) out.push('', ...tags);
     } else {
       out.push(`### ${name}`, '');
       if (d) out.push(d);
+      if (tags.length) out.push('', ...tags);
     }
     const section = SECTIONS.find(([, re]) => re.test(rel))?.[0] ?? 'More';
     return { section, name, rel, text: `${out.join('\n')}\n` };

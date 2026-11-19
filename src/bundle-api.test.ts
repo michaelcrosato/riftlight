@@ -2,8 +2,9 @@
 // reads it for exact names (README: "every export with its signature and doc"), so no doc is cut
 // mid-sentence or after its first paragraph (Engine.loadGame's unload contract, Hud.legend's
 // example), no code table in a doc loses its rows, and no type reads `... 4 more ...` (KEYMAP's
-// pad buttons were cut off both ways). A small program of long docs and long types, run through
-// the same generator the bundle uses.
+// pad buttons were cut off both ways), no constructor loses its doc (AudioManager's `key`) and no
+// @param, @returns or @remarks tag is dropped. A small program of long docs and long types, run
+// through the same generator the bundle uses.
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -46,7 +47,21 @@ export class Thing {
    *   thing.go(1); // THE MEMBER'S EXAMPLE
    */
   go(n: number): void {}
+  /**
+   * ${long(3, 'THE CONSTRUCTOR DOC ENDS HERE.')}
+   *
+   * @param argumentNumber0 THE FIRST ARGUMENT'S DOC.
+   */
   constructor(${Array.from({ length: 10 }, (_, i) => `argumentNumber${i}: string`).join(', ')}) {}
+  /**
+   * Scale it.
+   * @param by THE METHOD PARAMETER'S DOC,
+   * over two lines.
+   * @returns THE METHOD'S RESULT.
+   */
+  scale(by: number): number {
+    return by;
+  }
 }
 
 /** ${long(20, 'THE INTERFACE DOC ENDS HERE.')} */
@@ -62,9 +77,33 @@ export type Choice = ${Array.from({ length: 40 }, (_, i) => `'option-${i}'`).joi
 export function make() {
   return KEYS;
 }
+
+/**
+ * Mix two numbers.
+ * @param a THE FUNCTION PARAMETER'S DOC.
+ * @param b the other.
+ * @returns THE FUNCTION'S RESULT.
+ * @remarks THE REMARK.
+ * @internal
+ */
+export function mixInternal(a: number, b: number): number {
+  return a + b;
+}
+
+/**
+ * Mix two numbers.
+ * @param a THE FUNCTION PARAMETER'S DOC.
+ * @param b the other.
+ * @returns THE FUNCTION'S RESULT.
+ * @remarks THE REMARK.
+ * @see nothing here
+ */
+export function mix(a: number, b: number): number {
+  return a + b;
+}
 `,
   );
-  writeFileSync(join(src, 'bundle.ts'), "export { KEYS, make, Thing, type Choice, type Opts } from './engine/thing';\n");
+  writeFileSync(join(src, 'bundle.ts'), "export { KEYS, make, mix, mixInternal, Thing, type Choice, type Opts } from './engine/thing';\n");
   const program = ts.createProgram([join(src, 'bundle.ts')], { strict: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, noEmit: true });
   return generateApi(program, join(src, 'bundle.ts'), src, { version: '0.0.0', build: 'test' }).markdown;
 }
@@ -83,6 +122,18 @@ describe("the kit's API.md", () => {
     const item = md.slice(md.indexOf('- `go(n: number): void`: ')).split(/\n(?=- |#)/)[0]!; // up to the next member or entry
     expect(item).toContain('THE FIRST PARAGRAPH ENDS HERE.\n\n  THE SECOND PARAGRAPH: what goes and what stays,\n  over two lines.\n\n');
     expect(item).toContain("\n    thing.go(1); // THE MEMBER'S EXAMPLE");
+  });
+
+  it("writes a constructor's doc on its bullet, and each @param, @returns and @remarks tag as a line of its own", () => {
+    const ctor = md.slice(md.indexOf('- `new Thing(')).split(/\n(?=- |#)/)[0]!;
+    expect(ctor).toContain('THE CONSTRUCTOR DOC ENDS HERE.');
+    expect(ctor).toContain("\n  - `argumentNumber0`: THE FIRST ARGUMENT'S DOC.");
+    const method = md.slice(md.indexOf('- `scale(by: number): number`: Scale it.')).split(/\n(?=- |#)/)[0]!;
+    expect(method).toContain("\n  - `by`: THE METHOD PARAMETER'S DOC, over two lines.\n  - returns: THE METHOD'S RESULT.");
+    const fn = md.slice(md.indexOf('### mix()')).split(/\n(?=#)/)[0]!;
+    expect(fn).toContain("Mix two numbers.\n\n- `a`: THE FUNCTION PARAMETER'S DOC.\n- `b`: the other.\n- returns: THE FUNCTION'S RESULT.\n- remarks: THE REMARK.");
+    expect(fn, 'tags that are not the API’s').not.toMatch(/internal|see:|nothing here/);
+    expect(md, 'an @internal function stays out').not.toContain('mixInternal');
   });
 
   it('writes every type and signature whole (no "... 4 more ...")', () => {
