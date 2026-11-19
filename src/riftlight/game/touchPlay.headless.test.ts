@@ -250,16 +250,22 @@ describe('a finger swipes away what it starts on', () => {
   );
 
   it(
-    'the item windows: down from a window\'s title bar closes them; from an item it is a drag, not a dismissal',
+    'the item windows: down, left or right from a window\'s title bar closes them, as every framed panel; from an item it is a drag, not a dismissal; up does not',
     () => {
       const { rl, engine, game } = h;
-      expect(rl.ui.open('inventory')).toBe(true);
-      engine.step(2);
-      const win = (game.ports.loot as RealLoot).ui!.rects()[0]!;
-      swipe(win.x + 30, win.y + 60, 'down');
-      expect(stack(), 'from the paper doll: open').toEqual(['inventory']);
-      swipe(win.x + 30, win.y + 6, 'down');
-      expect(stack(), 'from the title bar: closed').toEqual([]);
+      for (const view of ['inventory', 'skills', 'stash', 'crafting'] as const)
+        for (const dir of ['down', 'left', 'right'] as const) {
+          expect(rl.ui.open(view)).toBe(true);
+          engine.step(2);
+          const wins = (game.ports.loot as RealLoot).ui!.rects();
+          const win = wins.at(-1)!; // the left window when there is one
+          swipe(win.x + 30, win.y + 60, dir);
+          expect(stack(), `${view}, ${dir} from inside it: open`).toEqual([view]);
+          swipe(win.x + 30, win.y + 6, 'up');
+          expect(stack(), `${view}, up from its title bar: open`).toEqual([view]);
+          swipe(win.x + 30, win.y + 6, dir);
+          expect(stack(), `${view}, ${dir} from its title bar: closed`).toEqual([]);
+        }
     },
     T,
   );
@@ -629,6 +635,80 @@ describe('a picked item\'s buttons and its tooltip', () => {
           p.engine.dispose();
         }
       }
+    },
+    T,
+  );
+});
+
+describe('a picked item\'s tooltip taller than the screen', () => {
+  it(
+    'scrolls with a finger\'s drag on it (its comparison with the gear comes into view), lets go with no tap, and a swipe from it over a title bar closes nothing',
+    async () => {
+      let overBar = 0;
+      for (const viewport of [
+        { width: 360, height: 800, dpr: 3 },
+        { width: 740, height: 360, dpr: 2 },
+      ]) {
+        const p = await headlessRiftlight({ seed: 33, viewport, options: { touch: true } });
+        try {
+          p.rl.newRun({ slot: 1, seed: 33 });
+          p.engine.input.noteTouch();
+          const loot = p.game.ports.loot as RealLoot;
+          const ui = loot.itemsUi();
+          expect(p.rl.ui.open('inventory')).toBe(true);
+          p.engine.step(2);
+          const where = `${p.engine.renderer.resolution.width}×${p.engine.renderer.resolution.height}`;
+          // deep rares and uniques until one's tooltip (with "compared to equipped") is taller than the screen
+          let tall: { uid: string; max: number } | null = null;
+          for (let k = 0; k < 8 && !tall; k++) {
+            const it = loot.give(p.game.services.rng, 40, k % 2 ? 'rare' : 'unique')!;
+            if (!it) break;
+            (ui as unknown as { touchPick: string | null }).touchPick = null;
+            const at = ui.itemCenter(it.uid)!;
+            tapAt(at.x, at.y, p.engine);
+            const tip = ui.pickedTip();
+            if (tip && tip.max > 0 && tip.lines.length) tall = { uid: it.uid, max: tip.max };
+          }
+          expect(tall, `${where}: a tooltip taller than the screen`).not.toBeNull();
+          const all = (ui as unknown as { pickLayout(): { lines: { text: string; sep?: boolean }[]; shown: Box } }).pickLayout();
+          const lines = all.lines.filter((l) => !l.sep).map((l) => l.text);
+          const before = ui.pickedTip()!;
+          expect(before.scroll).toBe(0);
+          expect(before.lines[0], `${where}: its name in view`).toBe(lines[0]);
+          expect(before.lines, `${where}: its last line cut off`).not.toContain(lines.at(-1));
+          expect(lines.join(' '), 'its comparison with the gear (wrapped on a narrow screen)').toContain(t('item.tip.compared'));
+          // a finger on the tooltip drags it up past its end: every line after the cut comes into view, the last at the bottom
+          const s = all.shown;
+          const from = { x: s.x + Math.floor(s.w / 2), y: s.y + s.h - 4 };
+          const bag = JSON.stringify(loot.store.state.inventory);
+          finger(from.x, from.y, true, p.engine);
+          p.engine.step(1);
+          for (let d = 4; d <= tall!.max + 12; d += 4) {
+            slide(from.x, from.y - d, p.engine);
+            p.engine.step(1);
+          }
+          finger(from.x, from.y - tall!.max - 12, false, p.engine);
+          p.engine.step(2);
+          const after = ui.pickedTip();
+          expect(after, `${where}: still picked (no tap where the drag ended)`).not.toBeNull();
+          expect(after!.scroll, `${where}: scrolled to its end`).toBe(tall!.max);
+          expect(after!.lines.at(-1), `${where}: its last line in view`).toBe(lines.at(-1));
+          expect(after!.lines.join(' '), `${where}: "compared to equipped" in view`).toContain(t('item.tip.compared'));
+          expect(JSON.stringify(loot.store.state.inventory), 'nothing moved').toBe(bag);
+          expect(p.rl.state().ui, 'the windows open').toEqual(['inventory']);
+          // a flick down from the tooltip where it covers a title bar scrolls back, never closes the windows
+          const bar = ui.rects().map((r) => ({ x: r.x, y: r.y, w: r.w, h: HEADER })).find((b) => overlaps(b, s));
+          if (bar) overBar++;
+          const on = bar ? { x: Math.max(bar.x, s.x) + 4, y: Math.max(bar.y, s.y) + 4 } : { x: from.x, y: s.y + 4 };
+          swipe(on.x, on.y, 'down', p.engine);
+          expect(p.rl.state().ui, `${where}: a swipe from the tooltip closes nothing`).toEqual(['inventory']);
+          expect(ui.pickedTip()!.scroll, 'pulled down: back towards its top').toBeLessThan(tall!.max);
+          expect(p.engine.errors).toEqual([]);
+        } finally {
+          p.engine.dispose();
+        }
+      }
+      expect(overBar, 'a tooltip over a title bar was swiped from').toBeGreaterThan(0);
     },
     T,
   );

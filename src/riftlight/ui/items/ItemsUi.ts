@@ -10,9 +10,10 @@
  * Ctrl-click to stash / sell / buy, Alt for affix tiers), touch (a tap picks an item: its
  * tooltip and, under it, a row of buttons a thumb can hit for what it can do there, Equip / Use /
  * Socket / Sell / To stash / Move...: `touchActions`; a second tap still acts, a long-press is still
- * the right-click; a swipe down from a window's title bar closes the windows) and keys or a gamepad (a cursor that steps
- * between cells and slots: confirm = click, X = right-click, Y / V = Ctrl-click, tab = the
- * next tab, back = put the held item back / close). Every change is a pure
+ * the right-click; a drag on a tooltip taller than the screen scrolls it; a swipe down or sideways
+ * from a window's title bar closes the windows) and keys or a gamepad (a focus that steps
+ * between cells and slots, in the window that last gained focus: confirm = click, X = right-click,
+ * Y / V = Ctrl-click, tab = the next tab, back = put the held item back / close). Every change is a pure
  * `loot/inventory` or `loot/sockets` operation committed to the ItemsStore.
  *
  * The mouse and touch come from `ctx.input`: the canvas takes no pointer events itself, so a
@@ -26,7 +27,9 @@
  * routes UiEvents to `handle(e)` and closes it; the view neither polls the pad nor closes on Escape.
  *
  * Narrow screens (a phone in portrait: 124 art pixels wide) stack the left window above a
- * compact bag (no paper doll) and wrap tooltips to the screen.
+ * compact bag (no paper doll) and wrap tooltips to the screen; a short one (a phone held sideways,
+ * 180 rows) closes the inventory's gaps up. At ten feet (no touch controls, a wide screen) text is in
+ * the normal font, never the mini one (the skill panel wider for it).
  */
 import type { GameContext, LineValues } from '../../../engine';
 import { padName } from '../../../engine/controls';
@@ -55,21 +58,36 @@ import { gemIcon } from '../../skills/icons';
 import { drawGemIcon, drawIcon } from './icons';
 import { canvasPainter, outline, type Painter, panel, shadowText, textWidth, UI, wrap } from './paint';
 import type { ItemsStore } from './store';
-import { drawTooltip, measureTooltip, TIP_W, type TipLine, tooltipLines } from './tooltip';
+import { drawTooltip, measureTooltip, TIP_W, type TipLine, tooltipLines, tooltipView } from './tooltip';
 
 export const CELL = 10;
 const PANEL_W = 128;
 /** Title bar height: content starts this far below a window's top. */
 export const HEADER = 16;
 const INV_H = 182;
+/** The bag's top, below the paper doll (art rows from the inventory window's top). */
+const BAG_Y = 108;
+/**
+ * The inventory on a screen too short for INV_H (a phone held sideways, 180 rows): the gaps close
+ * up, the bag 4 rows nearer the paper doll and the gold 6 nearer the bag.
+ */
+const INV_SHORT_H = 172;
+const SHORT_BAG_Y = 104;
 const INV_COMPACT_H = 84;
 const STASH_H = 156;
 const VENDOR_H = 148;
 const BENCH_H = 156;
 const SKILLS_H = 164;
+/** The skill panel at ten feet: wide enough for its rows' names and costs in the normal font. */
+const SKILLS_WIDE_W = 176;
 const VENDOR_SIZE = { w: 12, h: 10 };
 /** Screens narrower than this stack the windows (phones in portrait). */
 const WIDE = PANEL_W * 2 + 12;
+/**
+ * The pad's focus: a double frame of white (ink between its lines), read from the couch. No item
+ * wears it: a rarity's frame is one pixel of its colour (rare: sand), a normal item's dark.
+ */
+export const FOCUS = PALETTE.white;
 
 export interface Rect {
   x: number;
@@ -207,12 +225,15 @@ export class ItemsUi {
   private touchPick: string | null = null;
   /** Where the item a finger picked was tapped (its tooltip and action buttons stay while the finger goes to them). */
   private touchAt: { x: number; y: number } | null = null;
+  /** How far (art rows) a finger scrolled the picked item's tooltip that is taller than the screen (`pickLayout`'s `max` at most). */
+  private tipScroll = 0;
   private lastTouch = false;
   private hoverOrb: string | null = null;
   private messageTime = 0;
   /** Where the pointer was at the last `update`. */
   private pointerAt = { x: -1, y: -1 };
-  private downAt: { x: number; y: number; t: number; touch: boolean; moved: boolean; picked: boolean } | null = null;
+  /** The press now: where and when, a touch's, moved, picked an item up; `scroll` the tooltip's scroll when it landed on a picked item's tooltip taller than the screen (a drag scrolls it). */
+  private downAt: { x: number; y: number; t: number; touch: boolean; moved: boolean; picked: boolean; scroll?: number } | null = null;
   private longPressed = false;
   private time = 0;
   private compareCache = { key: '', deltas: [] as StatDelta[] };
@@ -288,42 +309,91 @@ export class ItemsUi {
     return this.size.w < WIDE;
   }
 
+  /**
+   * Text read from the couch (docs/game/ui.md *At ten feet*): the normal font, never the 3×5 mini
+   * one, everywhere but a phone's compact layouts (a narrow screen, a page with touch controls: the
+   * recorded density, so a replay lays out the same).
+   */
+  tenFoot(): boolean {
+    return !this.narrow && this.ctx.engine.renderer.touchDensity === 0;
+  }
+
+  /** A wide screen too short for the whole inventory (a phone held sideways, 180 rows): its gaps close up (`INV_SHORT_H`). */
+  private short(): boolean {
+    return !this.narrow && this.size.h < INV_H + 4;
+  }
+
   // ---------------------------------------------------------------- windows
 
   openInventory(): void {
     this.inventoryOpen = true;
-    this.refreshSize();
-    this.followDevice();
+    this.opened('right');
   }
 
   openStash(): void {
     this.left = 'stash';
     this.inventoryOpen = true;
-    this.refreshSize();
-    this.followDevice();
+    this.opened('left');
   }
 
   openVendor(): void {
     this.left = 'vendor';
     this.inventoryOpen = true;
-    this.refreshSize();
-    this.followDevice();
+    this.opened('left');
   }
 
   /** The crafting bench: pick an item, then an orb. */
   openBench(): void {
     this.left = 'bench';
     this.inventoryOpen = true;
-    this.refreshSize();
-    this.followDevice();
+    this.opened('left');
   }
 
   /** The skill panel: gems in the four skill slots, beside the bag. */
   openSkills(): void {
     this.left = 'skills';
     this.inventoryOpen = true;
+    this.opened('left');
+  }
+
+  /**
+   * A window gained focus (it opened, or the shell's page changed to it): the view follows the
+   * device in use (`followDevice`) and the pad's focus goes into that window (`padInto`).
+   */
+  private opened(side: 'left' | 'right'): void {
     this.refreshSize();
     this.followDevice();
+    this.padInto(side);
+  }
+
+  /**
+   * With the pad's focus (the keys' too), put it in the window on `side` (a left window, or the
+   * inventory) unless it is on something there already: that window's first stop (`padHome`). So
+   * when a window gains focus (it opens, the page changes to it, Tab or the Gems button shows it, the
+   * one it was in closes) no other window keeps a focus mark, nor its tooltip over this one. The
+   * mouse's cursor stays where the mouse is.
+   */
+  private padInto(side: 'left' | 'right'): void {
+    if (this.cursorMode !== 'pad') return;
+    const win = side === 'left' ? (this.left ? this.leftRect() : null) : this.inventoryOpen ? this.rightRect() : null;
+    if (!win) return;
+    const x = Math.floor(this.cursor.x);
+    const y = Math.floor(this.cursor.y);
+    const on = this.hit(x, y);
+    if (on && on.kind !== 'panel' && inside(win, x, y)) return;
+    this.cursor = this.padHome(side);
+  }
+
+  /** The first stop of the window on `side` (default: the left window when one is open): the selected skill's socket, the bench, the first cell. */
+  private padHome(side: 'left' | 'right' = this.left ? 'left' : 'right'): { x: number; y: number } {
+    if (side === 'left' && this.left) return this.left === 'skills' ? this.socketCenter(this.skillSlot, -1) : this.left === 'bench' ? this.centre(this.benchFrame()) : this.cellCenter('left', 0, 0);
+    return this.cellCenter('inventory', 0, 0);
+  }
+
+  /** The bag's Gems button or Tab: the skill panel shown beside the bag (the focus goes into it), or hidden (back into the bag). */
+  private toggleSkills(): void {
+    this.left = this.left === 'skills' ? null : 'skills';
+    this.padInto(this.left ? 'left' : 'right');
   }
 
   /** Close one side (or everything); the item on the cursor goes back. */
@@ -331,13 +401,17 @@ export class ItemsUi {
     if (which === 'all' || which === 'inventory') {
       this.inventoryOpen = false;
       this.left = null;
-    } else if (this.left === which) this.left = null;
+    } else if (this.left === which) {
+      this.left = null;
+      this.padInto('right');
+    }
     if (!this.inventoryOpen && !this.left) {
       this.returnHeld();
       this.applying = null;
       this.benchItem = null;
       this.touchPick = null;
       this.touchAt = null;
+      this.tipScroll = 0;
       this.downAt = null;
       this.longPressed = false;
       this.said = null; // a townsperson's line goes with the windows (the next to open never shows it)
@@ -420,25 +494,32 @@ export class ItemsUi {
   /** Inventory panel rect (art pixels). */
   rightRect(): Rect {
     const w = this.panelW();
-    const h = this.compact() ? INV_COMPACT_H : INV_H;
+    const h = this.compact() ? INV_COMPACT_H : this.short() ? INV_SHORT_H : INV_H;
     if (this.narrow) {
       const x = Math.floor((this.size.w - w) / 2);
       if (!this.left) return { x, y: Math.max(1, Math.floor((this.size.h - h) / 2)), w, h };
       const total = this.leftH() + 3 + h;
       return { x, y: Math.max(1, Math.floor((this.size.h - total) / 2)) + this.leftH() + 3, w, h };
     }
-    return { x: Math.max(0, this.size.w - w - 4), y: Math.max(2, Math.floor((this.size.h - INV_H) / 2)), w, h };
+    return { x: Math.max(0, this.size.w - w - 4), y: Math.max(2, Math.floor((this.size.h - h) / 2)), w, h };
   }
 
   leftRect(): Rect {
-    const w = this.panelW();
     const h = this.leftH();
     if (this.narrow) {
+      const w = this.panelW();
       const total = h + 3 + INV_COMPACT_H;
       return { x: Math.floor((this.size.w - w) / 2), y: Math.max(1, Math.floor((this.size.h - total) / 2)), w, h };
     }
+    const w = this.leftW();
     const r = this.rightRect();
     return { x: Math.max(0, Math.min(4, r.x - w - 4)), y: r.y, w, h };
+  }
+
+  /** A left window's width on a wide screen: the skill panel's at ten feet as wide as the room beside the bag allows (its rows in the normal font), else the bag's. */
+  private leftW(): number {
+    const w = this.panelW();
+    return this.left === 'skills' && this.tenFoot() ? Math.max(w, Math.min(SKILLS_WIDE_W, this.size.w - PANEL_W - 12)) : w;
   }
 
   /** Left edge of a 12-cell grid inside a window of width w. */
@@ -448,7 +529,7 @@ export class ItemsUi {
 
   inventoryGridOrigin(): { x: number; y: number } {
     const r = this.rightRect();
-    return { x: this.gridX(r), y: r.y + (this.compact() ? HEADER + 2 : 108) };
+    return { x: this.gridX(r), y: r.y + (this.compact() ? HEADER + 2 : this.short() ? SHORT_BAG_Y : BAG_Y) };
   }
 
   leftGridOrigin(): { x: number; y: number } {
@@ -484,8 +565,14 @@ export class ItemsUi {
   socketRect(slot: number, link: number): Rect {
     const r = this.leftRect();
     const y = r.y + HEADER + 2 + slot * 21;
-    if (link < 0) return { x: r.x + 10, y: y + 1, w: 18, h: 18 };
-    return { x: r.x + 31 + link * 13, y: y + 4, w: 12, h: 12 };
+    const x = r.x + this.skillInset();
+    if (link < 0) return { x: x + 10, y: y + 1, w: 18, h: 18 };
+    return { x: x + 31 + link * 13, y: y + 4, w: 12, h: 12 };
+  }
+
+  /** How far right the skill panel's sockets and text sit at ten feet (its wider window): the pad's focus round a skill's gem clear of its slot number. */
+  private skillInset(): number {
+    return this.left === 'skills' && this.leftW() > PANEL_W ? 3 : 0;
   }
 
   private skillRowRect(slot: number): Rect {
@@ -739,7 +826,12 @@ export class ItemsUi {
     this.lastTouch = touch;
     this.downAt = { x: p.x, y: p.y, t: this.time, touch, moved: false, picked: false };
     this.longPressed = false;
-    if (touch) return; // taps resolve on pointerup (long-press = right-click)
+    if (touch) {
+      // on a picked item's tooltip taller than the screen: a drag scrolls it
+      const laid = this.pickLayout();
+      if (laid && laid.max > 0 && inside(laid.shown, p.x, p.y)) this.downAt.scroll = this.tipScroll;
+      return; // taps resolve on pointerup (long-press = right-click)
+    }
     if (e.button === 2) this.secondary(p.x, p.y);
     else if (e.button === 0) {
       const had = !!this.held;
@@ -752,7 +844,10 @@ export class ItemsUi {
     this.cursor = { ...p };
     this.cursorMode = 'pointer';
     this.lastTouch = touch;
-    if (this.downAt && Math.hypot(p.x - this.downAt.x, p.y - this.downAt.y) > 3) this.downAt.moved = true;
+    const d = this.downAt;
+    if (d && Math.hypot(p.x - d.x, p.y - d.y) > 3) d.moved = true;
+    // a finger's drag on a tall tooltip: its lines follow the finger (pulled up, the last ones come into view)
+    if (d?.scroll !== undefined && d.moved) this.tipScroll = Math.max(0, Math.min(this.pickLayout()?.max ?? 0, d.scroll + d.y - p.y));
   }
 
   private onUp(p: { x: number; y: number }, button: number): void {
@@ -761,7 +856,8 @@ export class ItemsUi {
     if (!d) return;
     this.cursor = { ...p };
     if (d.touch) {
-      if (!this.longPressed) this.tap(p.x, p.y);
+      // a drag that scrolled the tooltip lets go: no tap where it ended
+      if (!this.longPressed && !(d.scroll !== undefined && d.moved)) this.tap(p.x, p.y);
       return;
     }
     // Drag and drop: an item picked up on this press and released somewhere else lands there.
@@ -778,6 +874,7 @@ export class ItemsUi {
     if (item && this.touchPick !== item.uid && t?.kind !== 'bench') {
       this.touchPick = item.uid;
       this.touchAt = { x, y };
+      this.tipScroll = 0;
       this.ctx.audio.play('loot-pickup', { volume: 0.25 });
       return;
     }
@@ -813,11 +910,21 @@ export class ItemsUi {
    * A finger's picked item laid out: its tooltip where it was tapped and its action buttons (in
    * rows on a narrow screen) under the tooltip, else over it; with room for neither (a tall
    * tooltip on a phone) the row at the top of the screen and the tooltip moved down under it, its
-   * last lines cut off by the screen's edge rather than its name by the buttons. Never over each
-   * other, nor over a window's title bar (its close box: a row slides beside it along its line, else
-   * goes under it).
+   * name in view rather than covered by the buttons. Never over each other, nor over a window's
+   * title bar (its close box: a row slides beside it along its line, else goes under it). `tip` is
+   * the whole tooltip, `shown` the part on screen: one taller than the screen shows what fits and
+   * scrolls by `max` rows at most (a finger's drag on it: `tipScroll`).
    */
-  private pickLayout(): { item: Item; at: Target; lines: TipLine[]; tip: Rect; actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] } | null {
+  private pickLayout(): { item: Item; at: Target; lines: TipLine[]; tip: Rect; shown: Rect; max: number; actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] } | null {
+    const laid = this.pickPlace();
+    if (!laid) return null;
+    const { tip } = laid;
+    const shown = { ...tip, h: Math.max(0, Math.min(tip.h, this.size.h - 1 - tip.y)) };
+    return { ...laid, shown, max: tip.h - shown.h };
+  }
+
+  /** The picked item's tooltip and its buttons placed (`pickLayout` adds how much of the tooltip is on screen). */
+  private pickPlace(): { item: Item; at: Target; lines: TipLine[]; tip: Rect; actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] } | null {
     const p = this.picked();
     if (!p) return null;
     const { item, at } = p;
@@ -925,11 +1032,16 @@ export class ItemsUi {
   }
 
   /**
-   * A swipe (the shell's) closes the windows when it is a downward one that starts on a window's
-   * title bar; elsewhere a quick drag moves an item, never closes them.
+   * A swipe (the shell's) closes the windows when it starts on a window's title bar, sideways or
+   * down as every framed panel's does (where no item can be dragged), and not on a picked item's
+   * tooltip over the bar (a drag there scrolls it); elsewhere a quick drag moves an item, never
+   * closes them.
    */
   swipeCloses(dir: 'left' | 'right' | 'up' | 'down', x: number, y: number): boolean {
-    return dir === 'down' && this.rects().some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + HEADER);
+    if (dir === 'up') return false;
+    const tip = this.pickLayout()?.shown;
+    if (tip && inside(tip, x, y)) return false;
+    return this.rects().some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + HEADER);
   }
 
   // ---------------------------------------------------------------- keys / pad (hosted)
@@ -986,8 +1098,7 @@ export class ItemsUi {
   private padStart(): void {
     this.cursorMode = 'pad';
     if (this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y))?.kind !== 'panel' && this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y))) return;
-    const first = this.left === 'skills' ? this.socketCenter(this.skillSlot, -1) : this.left === 'bench' ? this.centre(this.benchFrame()) : this.cellCenter('inventory', 0, 0);
-    this.cursor = { ...first };
+    this.cursor = this.padHome();
   }
 
   /** Every place the pad cursor can stop (centres), with the item there. */
@@ -1045,8 +1156,7 @@ export class ItemsUi {
       const tabs = this.vendorTabs();
       const i = tabs.findIndex((t) => t.kind === this.store.vendor.kind);
       this.switchVendor(tabs[(i + dir + tabs.length) % tabs.length]!.kind);
-    } else if (this.left === 'skills') this.left = null;
-    else if (this.left === null) this.left = 'skills';
+    } else if (this.left === 'skills' || this.left === null) this.toggleSkills();
   }
 
   private switchVendor(kind: VendorKind): void {
@@ -1088,7 +1198,8 @@ export class ItemsUi {
     // a finger let go where these windows didn't hear it (another panel over them): no long-press
     if (this.downAt?.touch && !input.isDown('Touch')) this.downAt = null;
     const d = this.downAt;
-    if (d?.touch && !d.moved && !this.longPressed && this.time - d.t > 0.45) {
+    // (a finger held on a tall tooltip is reading or about to scroll it: no long-press on what is under it)
+    if (d?.touch && !d.moved && d.scroll === undefined && !this.longPressed && this.time - d.t > 0.45) {
       this.longPressed = true;
       this.touchPick = null;
       this.touchAt = null;
@@ -1125,7 +1236,7 @@ export class ItemsUi {
     if (!t) return;
     if (t.kind === 'close') return this.closeWindows(t.panel);
     if (t.kind === 'button') {
-      this.left = this.left === 'skills' ? null : 'skills';
+      this.toggleSkills();
       this.ctx.audio.play('loot-pickup', { volume: 0.4 });
       return;
     }
@@ -1470,7 +1581,7 @@ export class ItemsUi {
     }
     Object.assign(c.style, { display: '', width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
     const sheet = this.sheet();
-    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.said ? JSON.stringify(this.said) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
+    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.tipScroll}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.said ? JSON.stringify(this.said) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = c.getContext('2d', { willReadFrequently: true });
@@ -1479,6 +1590,23 @@ export class ItemsUi {
     g.clearRect(0, 0, c.width, c.height);
     g.setTransform(k, 0, 0, k, 0, 0); // art pixels: k×k device pixels each
     const p = canvasPainter(g, k);
+    this.drawOn(p);
+    // text in the device's font came (or went): paint again at the resolution it needs
+    if (p.device !== this.deviceText) {
+      this.deviceText = p.device;
+      if (surfaceScale(f.scale, p.device) !== k) {
+        this.drawnKey = '';
+        this.paint();
+      }
+    }
+  }
+
+  /**
+   * The open windows, the focus, a tooltip and the message drawn on any Painter, in art pixels: the
+   * page's canvas (`paint`), or a tool's or a test's (headless nothing is painted).
+   */
+  drawOn(p: Painter): void {
+    if (!this.isOpen) return;
     if (this.inventoryOpen) this.drawInventory(p);
     if (this.left) this.drawLeft(p);
     this.drawCursor(p);
@@ -1496,14 +1624,6 @@ export class ItemsUi {
       const { x, y, w, h } = this.said.box;
       panel(p, x, y, w, h, UI.panelEdge);
       this.said.rows.forEach((l, i) => p.text(x + 5, y + 4 + i * 9, l, UI.text));
-    }
-    // text in the device's font came (or went): paint again at the resolution it needs
-    if (p.device !== this.deviceText) {
-      this.deviceText = p.device;
-      if (surfaceScale(f.scale, p.device) !== k) {
-        this.drawnKey = '';
-        this.paint();
-      }
     }
   }
 
@@ -1648,13 +1768,15 @@ export class ItemsUi {
         p.rect(g.x, g.y + g.h, Math.max(prog.xp > 0 ? 1 : 0, Math.round(g.w * prog.fraction)), 1, prog.max ? PALETTE.sand : prog.waiting ? PALETTE.orange : PALETTE.cyan);
       }
       const n = nums[s];
-      const tx = r.x + 72;
+      const tx = r.x + 72 + this.skillInset();
       const tw = r.x + r.w - 3 - tx;
+      // the mini font only in a phone's compact layouts: at ten feet the normal font (a wider window)
+      const mini = !this.tenFoot();
       if (n) {
         const cost = n.channel ? t('item.skill.row_channel', { cost: num(n.cost) }) : t(n.cooldown > 0 ? 'item.skill.row_cost_cooldown' : 'item.skill.row_cost', { cost: num(n.cost), cooldown: num(n.cooldown) });
-        rowText(p, tx, row.y, tw, n.name, on ? PALETTE.white : PALETTE.mist, cost, PALETTE.sky);
+        rowText(p, tx, row.y, tw, mini, n.name, on ? PALETTE.white : PALETTE.mist, cost, PALETTE.sky);
         if (n.unsupported.length) p.rect(r.x + r.w - 5, row.y + 11, 2, 5, PALETTE.red);
-      } else rowText(p, tx, row.y, tw, t('item.skill.empty'), PALETTE.slate);
+      } else rowText(p, tx, row.y, tw, mini, t('item.skill.empty'), PALETTE.slate);
     }
     // details of the selected slot: a pocket `npm run combat -- dps`
     const top = r.y + HEADER + 2 + SKILL_SLOTS * 21 + 1;
@@ -1781,7 +1903,8 @@ export class ItemsUi {
       // a finger's picked item: its tooltip where it was tapped, and its row of action buttons clear of it
       const picked = this.pickLayout();
       const shown = picked ? null : this.tipTarget(t);
-      if (picked) drawTooltip(p, picked.tip.x, picked.tip.y, picked.lines);
+      // one taller than the screen: the part on screen, scrolled where a finger's drag left it
+      if (picked) drawTooltip(p, picked.tip.x, picked.tip.y, picked.lines, undefined, picked.max > 0 ? { h: picked.shown.h, scroll: Math.min(this.tipScroll, picked.max) } : undefined);
       else if (shown) this.drawTip(p, shown.item, shown.at, cx, cy);
       for (const a of picked?.actions ?? []) {
         panel(p, a.rect.x, a.rect.y, a.rect.w, a.rect.h, UI.title);
@@ -1792,18 +1915,20 @@ export class ItemsUi {
       drawIcon(p, 'orb', cx + 3, cy + 3, 7, 7, UI.dim);
     }
     if (this.cursorMode === 'pad') {
-      // the pad's focus, read from the couch: a thick sand frame round what Cross would press
-      // (the item's whole footprint, a slot, a socket, an orb), an ink rim outside it
+      // the pad's focus, read from the couch: a double white frame round what Cross would press
+      // (the item's whole footprint, a slot, a socket, an orb), ink between its lines (`FOCUS`: no
+      // item's frame looks like it, a rare's is one pixel of sand); as wide as the old one, so it
+      // covers no more of a socket's slot number or the items beside it
       const r = this.held ? null : this.targetRect(t);
       if (r) {
-        outline(p, r.x - 3, r.y - 3, r.w + 6, r.h + 6, PALETTE.ink);
-        outline(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, UI.title);
-        outline(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, UI.title);
+        outline(p, r.x - 3, r.y - 3, r.w + 6, r.h + 6, FOCUS);
+        outline(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, PALETTE.ink);
+        outline(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, FOCUS);
       } else {
         p.rect(cx - 4, cy - 1, 9, 3, PALETTE.ink);
         p.rect(cx - 1, cy - 4, 3, 9, PALETTE.ink);
-        p.rect(cx - 3, cy, 7, 1, UI.title);
-        p.rect(cx, cy - 3, 1, 7, UI.title);
+        p.rect(cx - 3, cy, 7, 1, FOCUS);
+        p.rect(cx, cy - 3, 1, 7, FOCUS);
       }
     }
   }
@@ -1859,6 +1984,15 @@ export class ItemsUi {
   tipText(): string[] | null {
     const shown = this.tipTarget(this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y)));
     return shown ? this.tipLines(shown.item, shown.at).filter((l) => !l.sep).map((l) => l.text) : null;
+  }
+
+  /** A finger's picked item's tooltip as it shows (tools and tests): the lines in view, how far it is scrolled and can be (0: it fits), or null. */
+  pickedTip(): { lines: string[]; scroll: number; max: number } | null {
+    const laid = this.pickLayout();
+    if (!laid) return null;
+    const scroll = Math.min(this.tipScroll, laid.max);
+    const view = laid.max > 0 ? { h: laid.shown.h, scroll } : undefined;
+    return { lines: tooltipView(laid.lines, view).flatMap((v) => (v.line.sep ? [] : [v.line.text])), scroll, max: laid.max };
   }
 
   private drawTip(p: Painter, item: Item, at: Target, cx: number, cy: number): void {
@@ -1952,11 +2086,12 @@ function miniText(p: Painter, x: number, y: number, s: string, color: number): v
 
 /**
  * A skill slot's row of text, `w` art pixels wide and 20 high: its name and, under it, a second
- * line (the cost). Each in the mini font when it draws it and it fits, else the normal font; a
- * name that needs two rows of the normal font takes the second line's place.
+ * line (the cost). With `mini` (a phone's compact layouts) each in the mini font when it draws it
+ * and it fits, else (and always at ten feet) the normal font; a name that needs two rows of the
+ * normal font takes the second line's place.
  */
-function rowText(p: Painter, x: number, y: number, w: number, first: string, c1: number, second?: string, c2: number = c1): void {
-  const small = (s: string) => miniCovers(s) && miniWidth(s) <= w;
+function rowText(p: Painter, x: number, y: number, w: number, mini: boolean, first: string, c1: number, second?: string, c2: number = c1): void {
+  const small = (s: string) => mini && miniCovers(s) && miniWidth(s) <= w;
   if (small(first)) miniText(p, x, second ? y + 4 : y + 7, first, c1);
   else {
     const rows = wrap(first, w);

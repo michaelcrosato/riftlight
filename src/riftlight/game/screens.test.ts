@@ -13,7 +13,10 @@ import type { Item } from '../core/types';
 import type { Interactable } from '../town/Town';
 import { type HeadlessRiftlight, headlessRiftlight, hudTexts, pointAtArt } from '../headless';
 import { t } from '../lang';
-import { CELL } from '../ui/items/ItemsUi';
+import { CELL, FOCUS } from '../ui/items/ItemsUi';
+import { type Painter, textWidth } from '../ui/items/paint';
+import { RARITY_COLOURS } from '../loot/filter';
+import { PALETTE } from '../../engine/palette';
 import type { CharacterSheet, DeathRecap } from '../ui/panels';
 import type { RealHero } from '../wire/hero';
 import type { RealLoot } from '../wire/loot';
@@ -42,6 +45,17 @@ const texts = () => hudTexts(h.engine, 1).map((x) => x.text);
 const loot = () => h.game.ports.loot as RealLoot;
 /** The item windows last used with the mouse (their cursor is kept while they are shut). */
 const mouseLast = () => loot().itemsUi().setViewState({ ...loot().itemsUi().viewState(), cursorMode: 'pointer' });
+/** What the item windows draw now (headless nothing is painted): each rect, and each text in the normal font (the mini font is rects). */
+const drawn = () => {
+  const rects: { x: number; y: number; w: number; h: number; color: number }[] = [];
+  const texts: { x: number; y: number; text: string }[] = [];
+  const p: Painter = {
+    rect: (x, y, w, h, color) => void rects.push({ x, y, w, h, color }),
+    text: (x, y, text) => (texts.push({ x, y, text }), textWidth(text)),
+  };
+  loot().ui!.drawOn(p);
+  return { rects, texts };
+};
 
 beforeAll(async () => {
   h = await headlessRiftlight({ seed: 616 });
@@ -185,7 +199,46 @@ describe('Riftlight at ten feet', () => {
     const r = ui.focusRect()!;
     expect(r.h, 'a sword is taller than a cell: the frame takes all of it').toBeGreaterThan(CELL);
     expect(r.w).toBe(CELL - 1);
+    // on a rare (its own frame one pixel of sand, as every rare around it): a double frame in a
+    // colour no item wears, ink between its lines
+    const rare = loot().give(h.game.services.rng, 10, 'rare')!;
+    expect(rare, 'a rare in the bag').not.toBeNull();
+    ui.cursor = { ...ui.itemCenter(rare.uid)! };
+    const f = ui.focusRect()!;
+    const { rects } = drawn();
+    /** The colour of the last left edge drawn `d` pixels outside the focused box. */
+    const edge = (d: number) => rects.filter((q) => q.x === f.x - d && q.y === f.y - d && q.w === 1 && q.h === f.h + 2 * d).at(-1)?.color;
+    expect(edge(0), 'the rare’s own frame').toBe(RARITY_COLOURS.rare);
+    expect([edge(1), edge(2), edge(3)], 'white, ink, white').toEqual([FOCUS, PALETTE.ink, FOCUS]);
+    // the frames items wear in the windows (a normal item's is dark: white is only its name's colour)
+    const frames = [RARITY_COLOURS.magic, RARITY_COLOURS.rare, RARITY_COLOURS.unique, RARITY_COLOURS.currency, RARITY_COLOURS.gem];
+    expect(frames, 'no item’s frame is the focus’s colour').not.toContain(edge(1));
     rl.press('Escape');
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('at ten feet the skill panel’s rows are in the normal font, names and costs whole (the window wider for them)', () => {
+    const { rl, engine } = h;
+    mouseLast();
+    expect(rl.ui.open('skills')).toBe(true);
+    engine.step(2);
+    const ui = loot().ui!;
+    expect(ui.tenFoot(), 'a desktop’s screen, no touch controls').toBe(true);
+    const win = ui.leftRect();
+    const { texts } = drawn();
+    const rows = ui.numbers();
+    expect(rows.filter(Boolean).length, 'the starter gems').toBe(4);
+    for (const n of rows) {
+      if (!n) continue;
+      const name = texts.find((x) => x.text === n.name);
+      expect(name, `${n.name}: in the normal font, whole`).toBeDefined();
+      expect(name!.x + textWidth(n.name), `${n.name}: inside the window`).toBeLessThanOrEqual(win.x + win.w - 3);
+      const costs = texts.filter((x) => x.y === name!.y + 9 && x.x === name!.x).map((x) => x.text);
+      expect(costs, `${n.name}: its cost under it in the normal font`).toEqual([expect.stringMatching(/ MP/)]);
+      expect(costs[0]!.endsWith('.'), `${costs[0]}: whole, not clipped`).toBe(false);
+    }
+    rl.ui.close();
+    engine.step(1);
     expect(engine.errors).toEqual([]);
   });
 
@@ -256,6 +309,52 @@ describe('Riftlight at ten feet', () => {
     expect(stack()).toEqual([]);
     engine.input.setGamepads(null);
     engine.input.noteDevice('keyboard');
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('a window that gains focus takes the pad’s: R1 from a bag item to Skills puts it in the skill panel and the item’s tooltip goes; L1, Tab and the stash do the same', () => {
+    const { rl, engine } = h;
+    const ui = loot().itemsUi();
+    /** The pad's focus is inside window `r`. */
+    const focusIn = (r: { x: number; y: number; w: number; h: number }) => {
+      const f = ui.focusRect();
+      return !!f && f.x >= r.x && f.y >= r.y && f.x + f.w <= r.x + r.w && f.y + f.h <= r.y + r.h;
+    };
+    mouseLast();
+    engine.input.setGamepads([pad()]);
+    engine.step(1);
+    tap(8); // Create: the inventory, with the pad in use
+    expect(stack()).toEqual(['inventory']);
+    ui.cursor = { ...ui.itemCenter('tv-sword')! }; // the focus on a bag item: its tooltip shows
+    engine.step(1);
+    const sword = ui.tipText();
+    expect(sword?.[0], 'the sword’s tooltip').toBe('Arming Sword');
+    tap(5); // R1: the next screen, Skills
+    expect(stack()).toEqual(['skills']);
+    expect(focusIn(ui.leftRect()), 'the focus in the skill panel').toBe(true);
+    expect(ui.cursor, 'on the selected skill’s gem').toEqual(ui.socketCenter(ui.skillSlot, -1));
+    expect(ui.tipText()?.[0], 'its gem’s tooltip, not the bag item’s over the skills').not.toBe(sword![0]);
+    tap(4); // L1: back to the inventory
+    expect(stack()).toEqual(['inventory']);
+    expect(focusIn(ui.rightRect()), 'the focus back in the bag').toBe(true);
+    // the keys drive the same focus: Tab shows the skill panel beside the bag (the focus goes in), Tab again hides it
+    engine.input.setGamepads(null);
+    engine.input.noteDevice('keyboard');
+    rl.press('Tab');
+    expect(ui.left).toBe('skills');
+    expect(focusIn(ui.leftRect()), 'Tab: the focus in the skill panel').toBe(true);
+    rl.press('Tab');
+    expect(ui.left).toBeNull();
+    expect(focusIn(ui.rightRect()), 'Tab again: back in the bag').toBe(true);
+    rl.press('Escape');
+    expect(stack()).toEqual([]);
+    // the stash opens with the focus in it, not on the bag item it was last on
+    ui.cursor = { ...ui.itemCenter('tv-sword')! };
+    rl.talkTo('stash');
+    expect(stack()).toEqual(['stash']);
+    expect(focusIn(ui.leftRect()), 'the stash window has the focus').toBe(true);
+    rl.press('Escape');
+    expect(stack()).toEqual([]);
     expect(engine.errors).toEqual([]);
   });
 

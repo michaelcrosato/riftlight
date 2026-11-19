@@ -76,9 +76,14 @@ from it and its bar names no screens. The **death recap** opens with what matter
 where, the killing blow, the damage taken and its biggest type, the tip, the cost); its tables
 (damage by type, the worst enemies) are behind Details (△ / Tab, or the button). The HUD's clock,
 kills and tuning, the loot window's counts, the codex's headings and the item windows' hints are in
-the normal font. The pad's focus in the item windows frames the whole item, slot, socket or orb
-under it (`ItemsUi.focusRect`: a two-pixel sand frame with an ink rim), there as they open with the
-pad in use; their hints follow the device in use.
+the normal font, as are the skill panel's rows (names and costs: `ItemsUi.tenFoot`, the panel wider
+for them, `SKILLS_WIDE_W`; the mini font only on a narrow screen or a page with touch controls). The
+pad's focus in the item windows frames the whole item, slot, socket or orb under it
+(`ItemsUi.focusRect`: a double white frame, ink between its lines, `FOCUS`; no item's frame looks
+like it, a rare's is one pixel of sand), there as they open with the pad in use; a window that
+gains focus takes it (`padInto`: it opens, L1 R1 page to it, Tab or the Gems button shows it, the
+one it was in closes), so no other window keeps a focus mark or its tooltip. Their hints follow the
+device in use.
 
 ## On a touch screen (`game/touch.ts`)
 
@@ -150,8 +155,9 @@ swipe, `Panel.swipes`, though its title bar always closes it); one that starts o
 ends the talk, and a tap on it puts it away; with no panel, one from the centre banner ends it (`BannerQueue.skip`,
 not in a 52in1 round) and one from the loot feed's lines clears them (a finger that lands on either
 is no swing for as long as it stays down and wherever it slides: `pressTaken`).
-The item windows close on a swipe down from a window's title bar (`Panel.swipeCloses`: elsewhere a
-quick drag moves an item), the passive tree on a finger pulled down from its top bar (its own
+The item windows close on a swipe down, left or right from a window's title bar, as every framed
+panel does (`Panel.swipeCloses`: elsewhere a quick drag moves an item; never from a picked item's
+tooltip over the bar), the passive tree on a finger pulled down from its top bar (its own
 canvas: sent as the × is). A finger acts on a menu as it lets go where it went down, so a swipe
 across a button presses nothing. **Taps**: a tap on a loot label picks the item up (walking there,
 `goTo`) and a tap on the interact prompt does what F does; neither is a swing, held or not, and
@@ -162,10 +168,13 @@ right of it). **The item windows** show no hidden gestures: a tap picks an item 
 under it, a row of buttons a thumb can hit for what it can do there (`touchActions`: Equip,
 Unequip, Use, Socket, Take out, To bag, To stash, Buy, Sell, Move; in rows on a narrow screen);
 the row never covers the tooltip (`pickLayout`: under it, else over it, else at the top of the
-screen with the tooltip moved down under it, its last lines cut by the screen's edge rather than
-its name by the buttons) nor a window's title bar (its close box, the Gems button: the row slides
-beside it along its line, else goes under it with the tooltip under the row); a second tap and a
-long-press still work. **Assists**
+screen with the tooltip moved down under it, its name in view) nor a window's title bar (its close
+box, the Gems button: the row slides beside it along its line, else goes under it with the tooltip
+under the row); a tooltip taller than the screen (a rare's on a 360×800 or a 740×360 phone) shows
+what fits with a scroll bar at its edge, and a finger's drag on it scrolls it to its last lines
+(the comparison with the gear: `tipScroll`, no tap where the drag ends nor a long-press while it
+rests there). A second tap and a long-press still work. A 740×360 phone held sideways has 180
+rows, fewer than the inventory's 182: there its gaps close up (`INV_SHORT_H`, 172 rows). **Assists**
 (`Riftlight.touchAssist`, a finger on a page with touch controls only: the recorded `input.device`
 and density, each a setting shown on such a page, where it applies, and on by default, kept by
 recordings as play settings; a touch on a desktop's page, a touchscreen laptop's, gets none): auto attack (`touchAutoAttack`: the basic attack on the

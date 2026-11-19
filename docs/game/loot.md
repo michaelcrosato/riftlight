@@ -98,8 +98,9 @@ filter off and on.
 every frame and don't feed hero movement while `ui.isOpen`. Click or drag to move items,
 right-click to equip or start applying an orb, Ctrl-click to stash, sell or buy, Alt shows
 affix tiers; touch long-press is right-click; the gamepad stick moves a cursor (Cross / A click,
-Square / X right-click, Triangle / Y Ctrl-click, Circle / B close; its focus a thick frame round the
-whole item, slot, socket or orb under it: `focusRect`), and the windows' hints name the
+Square / X right-click, Triangle / Y Ctrl-click, Circle / B close; its focus a double white frame
+round the whole item, slot, socket or orb under it, in the window that last gained focus:
+`focusRect`, `padInto`), and the windows' hints name the
 pad's buttons then (`item.*.hint_pad`, in the player's button style). Tabs (the stash's, the
 vendor's) are Tab / Shift+Tab and L2 / R2, and L1 / R1 or Q / E there too; in the inventory and the
 skill panel L1 / R1 page the character screens instead (docs/game/shell.md). Tooltips compare against the equipped item on a
