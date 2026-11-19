@@ -16,6 +16,7 @@ complete, small example of an engine system, written to be copied.
 | **T** | in the menu | in the menu | tweak: the room's live settings, then the engine's (game speed, camera, the room-change transition, shake) and every one of the player's, saved (look, pixel art, pixel size, quality (auto or a level), frame rate, sound, volume, music, effects, the controller's buttons, vibration, debug info), and Reset settings |
 | **I** | in the menu | a tap on it | the room's card again, or away |
 | Esc / Backspace | Circle | a sideways swipe, the close box | close a panel |
+| Tab / Shift+Tab | R1 / L1 | drag | a guide's next or previous heading |
 
 Walk into a door to enter a room; every room has its pads on the floor: step on one to
 change something (the toast says what and why; the guide lists them all). A swipe or a tap sends
@@ -23,8 +24,9 @@ the card and a toast away, and a click or a tap on one is the shell's: nothing i
 or skipped behind it, even when the finger lifts (`RoomRuntime.pointerFree`); so is one a panel
 took (a menu row, the close box) until it lets go, and the Cutscene skips on a tap as it lifts, so
 the swipe that sends the card away skips nothing. Every prompt (the row along the bottom, the card, toasts, labels, the
-guide, the menu) names the control for the input used last (`controls.ts` `WORLD_CONTROLS`, each
-room's `Game.controls`; a line names one as `{key:action}`, `keyText`). Rooms with actions of their
+guide, the menu, each panel's legend: ✕ Select ○ Back, a guide's L1 R1 Headings) names the control for
+the input used last (`controls.ts` `WORLD_CONTROLS`, each room's `Game.controls`; a line names one as
+`{key:action}`, `keyText`). Rooms with actions of their
 own have them on every device: the Time Lab rewinds on R, L2 or <<; the Gallery steps on Q / E,
 L1 / R1 or a phone's < > and changes shelf on comma / period, L2 / R2 or >> (back a shelf on a
 phone: its < SHELF pad); the Workshop picks on

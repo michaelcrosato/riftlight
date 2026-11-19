@@ -20,6 +20,7 @@ const KEYS: LineArea = {
     'key.tab': 'Tab',
     'key.backspace': 'Backspace',
     'key.shift': 'Shift',
+    'key.shift_tab': 'Shift+Tab',
     'key.ctrl': 'Ctrl',
     'key.up': 'Up',
     'key.down': 'Down',
@@ -77,6 +78,7 @@ const KEYS: LineArea = {
     'key.tab': 'The Tab key, as written on a keyboard.',
     'key.backspace': 'The Backspace key, as written on a keyboard.',
     'key.shift': 'The Shift key, as written on a keyboard.',
+    'key.shift_tab': 'Shift held with Tab (the heading before in Engine World’s guides; Tab alone is the next), on a key cap: the two keys as written on keyboards in your language, joined by +.',
     'key.ctrl': 'The Ctrl (Control) key, as written on keyboards in your language (the side-scroller’s crouch).',
     'key.up': 'The up arrow key, on a small key cap and inside lines. Its direction as players in your language name the key; short.',
     'key.down': 'The down arrow key, on a small key cap and inside lines; short.',
@@ -259,6 +261,7 @@ const MENUS: LineArea = {
     'legend.screens': 'Screens',
     'legend.hide': 'Hide',
     'legend.tabs': 'Tabs',
+    'legend.headings': 'Headings',
   },
   notes: {
     'title.tagline': 'Under the game’s logo on the title screen: what kind of game this is.',
@@ -334,6 +337,7 @@ const MENUS: LineArea = {
     'legend.screens': 'Under the inventory, skills, passive tree, character and codex screens, after the two buttons that go to the screen before and after (L1 and R1, Q and E).',
     'legend.hide': 'Under the look studio, after the button that hides the panel to see the whole picture.',
     'legend.tabs': 'Under the stash and the vendor, after the two buttons that switch their tabs (L1 and R1, Q and E).',
+    'legend.headings': 'Under a long page of text (Engine World’s guides), after the buttons that jump to the heading before or after (L1 and R1; Shift+Tab and Tab on a keyboard).',
   },
   max: {
     'menu.title.continue': 20,

@@ -1,11 +1,13 @@
 /**
  * A scrolling page of text in the pixel font: the station guides and the field guide.
  * Headings, paragraphs, bullets and code (the 3×5 mini font), wrapped to the panel's
- * width. Up / down / wheel / drag scroll it; tab jumps between headings.
+ * width. Up / down / wheel / drag scroll it; Tab / Shift+Tab, L1 / R1 jump between headings (its legend says so).
  */
 import type { HudColor } from '../../engine';
 import type { Panel } from '../../riftlight/game/ports';
+import { t } from '../../riftlight/lang';
 import { type Rect, type UiCanvas, type UiEvent, wrap } from '../../riftlight/ui/kit';
+import type { LegendItem } from '../../riftlight/ui/legend';
 
 export type Block =
   | { readonly kind: 'h'; readonly text: string; readonly color?: HudColor }
@@ -48,9 +50,22 @@ export class Reader implements Panel {
     return { w: this.width, h: this.height };
   }
 
+  /** L1 / R1 (Shift+Tab / Tab) jump between the headings, back closes: no select, it has nothing to choose. */
+  legend(): LegendItem[] {
+    return [
+      { actions: ['heading_prev', 'heading_next'], label: t('legend.headings') },
+      { actions: ['back'], label: t('legend.back') },
+    ];
+  }
+
   /** Lines laid out (tests, agents). */
   get lineCount(): number {
     return this.lines.length;
+  }
+
+  /** How far down the page is scrolled, art pixels (tests, agents). */
+  get offset(): number {
+    return this.scroll;
   }
 
   fit(w: number, h: number): void {

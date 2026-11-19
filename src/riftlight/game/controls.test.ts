@@ -42,6 +42,24 @@ describe('control labels', () => {
     for (const action of Object.keys(CONTROLS)) for (const d of ['keyboard', 'pad', 'touch'] as const) expect(controlLabel(action, d), `${action} ${d}`).not.toBe(action);
   });
 
+  it('a menu control names what the menus bind to it (`MENU_BINDINGS`): a reader’s headings L1 / R1, Shift+Tab / Tab, never Tab for the one before', () => {
+    const { heading_prev: prev, heading_next: next } = CONTROLS;
+    expect(MENU_BINDINGS.tabPrev).toContain(prev.pad);
+    expect([MENU_BINDINGS.tabNext]).toEqual([expect.arrayContaining([next.pad, next.key])]);
+    // the keyboard's heading before is Shift held with Tab (the hosts' own: the World's and the
+    // Riftlight shell's), not a key the menus hear as the next one
+    expect(MENU_BINDINGS.tabNext).not.toContain(prev.key);
+    expect(prev.key).toBe('ShiftTab');
+    expect([controlLabel('heading_prev', 'keyboard'), controlLabel('heading_next', 'keyboard'), controlLabel('heading_prev', 'pad'), controlLabel('heading_next', 'pad', 'xbox')]).toEqual(['Shift+Tab', 'Tab', 'L1', 'RB']);
+    // the character screens' tabs and pages too
+    expect(SHELL_MENU_BINDINGS.tabPrev).toContain(CONTROLS.tab_prev.pad);
+    expect(SHELL_MENU_BINDINGS.tabNext).toContain(CONTROLS.tab_next.pad);
+    expect(KEYS.pagePrev).toEqual(expect.arrayContaining([CONTROLS.page_prev.key, CONTROLS.page_prev.pad, CONTROLS.page_swipe_prev.pad]));
+    expect(KEYS.pageNext).toEqual(expect.arrayContaining([CONTROLS.page_next.key, CONTROLS.page_next.pad, CONTROLS.page_swipe_next.pad]));
+    expect(MENU_BINDINGS.back).toEqual(expect.arrayContaining([CONTROLS.back.key, CONTROLS.back.pad]));
+    expect(MENU_BINDINGS.confirm).toEqual(expect.arrayContaining([CONTROLS.confirm.key, CONTROLS.confirm.pad]));
+  });
+
   it('fills {key:action} in a line for the device in use', () => {
     let device: 'keyboard' | 'pad' | 'touch' = 'keyboard';
     lang().controlLabel = (a) => controlLabel(a, device);

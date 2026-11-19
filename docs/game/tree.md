@@ -21,8 +21,11 @@ const view = new TreeView({
   onClose: () => (engine.paused = false),
 });
 view.open();                                   // pause the game while open; view.isOpen(), view.close()
+view.pad(ctx.input, dt);                       // each game frame: the pad, from the engine's input (no search box on it)
 // in the game: pages: { keys: ['KeyQ', 'KeyE'], pad: ['PadLB', 'PadRB'] } leaves Q / E to the game
-// (the shell's ring of character screens) instead of zooming, and the bottom bar names them
+// (the shell's ring of character screens) instead of zooming, and the bottom bar names them (redrawn
+// when `pad`, which may be a getter, changes: a DualSense's swipes come and go)
+// the bar and a node's tooltip name the device in use: "Square: refund", "Hold: refund", "R-click: refund" (`tipControl`)
 state.points = pointBudget(newLevel, deepest).total; view.refresh();   // on level-up
 ```
 

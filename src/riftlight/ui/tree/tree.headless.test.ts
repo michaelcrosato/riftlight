@@ -91,4 +91,47 @@ describe('riftlight passive tree', () => {
     },
     T,
   );
+
+  it(
+    "the pad reaches the tree through the engine's input: player 1's pad in use (slot 1) moves its cursor and takes a node, recorded; a couch guest's (slot 0) never does",
+    () => {
+      const { rl, game, engine } = h;
+      const pad = (index: number, pressed: number[] = []) => ({ connected: true, mapping: 'standard', index, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+      /** Button `b` on the pad in `slot` pressed for a frame and let go. */
+      const tap = (slot: number, b: number) => {
+        engine.input.setGamepads([pad(0, slot === 0 ? [b] : []), pad(1, slot === 1 ? [b] : [])]);
+        engine.step(1);
+        engine.input.setGamepads([pad(0), pad(1)]);
+        engine.step(1);
+      };
+      engine.input.setGamepads([pad(0), pad(1)]);
+      engine.step(1);
+      game.coop.join(0); // a couch guest plays on slot 0
+      expect(rl.press('KeyP').ui).toEqual(['tree']);
+      tap(1, 3); // Triangle on player 1's pad (the stats): the pad in use is slot 1
+      expect([engine.input.device, engine.input.padIndex]).toEqual(['pad', 1]);
+      const start = panel().debug();
+      for (let i = 0; i < 3; i++) tap(0, 15); // the guest's d-pad right
+      expect(panel().debug(), "the guest's d-pad moves nothing").toEqual(start);
+      for (let i = 0; i < 3; i++) tap(1, 15); // player 1's
+      const { hover } = panel().debug();
+      expect(hover, "player 1's d-pad steps to a node").toEqual(expect.any(String));
+      const st = panel().state!;
+      expect(st.pathTo(hover!)?.length, `the path to ${hover} is affordable`).toBeLessThanOrEqual(st.unspent);
+      tap(0, 0); // the guest's Cross
+      engine.step(2);
+      expect(allocated(hover!), "the guest's Cross takes nothing").toBe(false);
+      tap(1, 0); // player 1's
+      engine.step(2);
+      expect(allocated(hover!), "player 1's Cross takes it").toBe(true);
+      const sent = engine.recording()!.frames.flatMap((f) => (f.commands ?? []) as { rl?: string; action?: { kind: string; id?: string } }[]);
+      expect(sent.filter((c) => c.rl === 'tree').map((c) => c.action), 'what the pad did to the tree is recorded').toContainEqual({ kind: 'activate', id: hover });
+      expect(rl.press('PadB').ui).toEqual([]);
+      game.coop.leave(2);
+      engine.input.setGamepads(null);
+      engine.input.noteDevice('keyboard');
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
 });

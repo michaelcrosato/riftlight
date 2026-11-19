@@ -224,6 +224,9 @@ export const CONTROLS = {
   page_swipe_next: { key: 'KeyE', pad: TOUCHPAD_KEYS.right },
   tab_prev: { key: 'ArrowLeft', pad: 'PadLT' },
   tab_next: { key: 'ArrowRight', pad: 'PadRT' },
+  /** Engine World's reader (its guides, `MENU_BINDINGS`): the heading before or after, L1 / R1; on the keyboard Shift+Tab or Tab (the World's shell makes Shift+Tab the tab before, as the Riftlight shell does). */
+  heading_prev: { key: 'ShiftTab', pad: 'PadLB' },
+  heading_next: { key: 'Tab', pad: 'PadRB' },
   details: { key: 'Tab', pad: 'PadY' },
   turn: { key: 'MouseOrQE', pad: 'PadRStick', touch: 'TouchDrag' },
   drag: { key: 'MouseDrag', pad: 'PadRStick', touch: 'TouchDrag' },

@@ -11,23 +11,27 @@
  *   tells the shell (`changed('tree')`, which re-applies the Mod source).
  *
  * Input: while open the TreeView owns the keyboard (it captures keys, so Escape / P close
- * it and never reach the pause menu), the mouse, touch and the pad's sticks and A / X / Y;
- * the shell's `back` (pad B, the agent API) closes it through the panel stack. Q / E are the
+ * it and never reach the pause menu), the mouse and touch. The pad is player 1's from the
+ * engine's input (`ctx.input`: the pad in use through its remaps, never a couch guest's;
+ * recorded), handed to the view each frame (`draw`): its sticks, triggers, d-pad and ✕ □ △. The
+ * shell's `back` (pad B, the agent API) closes it through the panel stack. Q / E are the
  * shell's (`pages`: the game hears them and pages round the character screens, as L1 / R1 do,
  * which the view never reads); its bottom bar names them. What the
  * player does to the tree (allocate, refund, close) is sent through `ctx.input.send` and done
  * when it arrives (`draw`), so a recording of the game keeps it and a replay does the same.
- * Without a page (`Engine.headless`) the panel opens with no view and applies the same actions
- * (`ui/tree/actions.ts`) to its state, so a replay in Node does the same to the tree too.
+ * Without a page (`Engine.headless`) the panel opens with no view: the pad moves a cursor of its
+ * own (`TreeCursor`) and the same actions (`ui/tree/actions.ts`) apply to its state, so a replay in
+ * Node does the same to the tree too.
  */
 import type { Mod } from '../core/mods';
 import { t } from '../lang';
 import { defaultTree, type PassiveTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
 import { KEYS, pagePad, touchpadSwipes } from '../game/controls';
 import type { Panel, PanelHost, TreePort } from '../game/ports';
-import type { UiEvent } from '../ui/kit';
+import type { UiCanvas, UiEvent } from '../ui/kit';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeRules } from '../ui/tree/actions';
-import { TreeView } from '../ui/tree/TreeView';
+import { TreeCursor, type TreePadInput } from '../ui/tree/cursor';
+import { type TreeHint, type TreeHintMode, type TreePages, treeHints, TreeView } from '../ui/tree/TreeView';
 
 /** The point budget of a save right now. */
 export function treePoints(host: PanelHost): number {
@@ -44,9 +48,19 @@ export class TreePanel implements Panel {
   readonly ring?: false;
   view: TreeView | null = null;
   state: TreeState | null = null;
+  /** Without a page: the cursor the pad moves (the view has its own). */
+  private nav: TreeCursor | null = null;
   private tree: PassiveTree | null = null;
   private rules: TreeRules | null = null;
   private closing = false;
+  /** The time of the last frame drawn (-1: none since it opened). */
+  private last = -1;
+  /**
+   * The character screens either side of the tree (none from Oru's respec): Q / E, and the pad's L1
+   * / R1 with a DualSense's swipes while they page (`touchpadSwipes`: 52in1's setting, a guest's
+   * DualSense), read each time the bar is drawn.
+   */
+  readonly pages: TreePages | undefined;
 
   constructor(
     readonly host: PanelHost,
@@ -54,6 +68,15 @@ export class TreePanel implements Panel {
   ) {
     this.title = respec ? 'Passive tree · respec' : 'Passive tree';
     if (respec) this.ring = false;
+    const engine = host.services.ctx.engine;
+    this.pages = respec
+      ? undefined
+      : {
+          keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')),
+          get pad() {
+            return pagePad(touchpadSwipes(engine));
+          },
+        };
   }
 
   open(): void {
@@ -81,10 +104,15 @@ export class TreePanel implements Panel {
     };
     this.rules = rules;
     this.tree = tree;
+    this.last = -1;
     registerTreeSounds(ctx.audio);
     // the view is the page's (a canvas over the game); headless the actions apply without one
     const container = ctx.engine.renderer.container;
-    if (!container) return;
+    if (!container) {
+      const res = ctx.engine.renderer.resolution;
+      this.nav = new TreeCursor(tree, res.width, res.height);
+      return;
+    }
     this.view = new TreeView({
       ...rules,
       container,
@@ -99,20 +127,38 @@ export class TreePanel implements Panel {
       padGlyphs: () => ctx.engine.controls.style,
       // the character screens' ring: Q / E (and L1 / R1 or a swipe on a DualSense's touchpad, the
       // shell's own read) page from the tree too; Oru's respec is no screen of the ring (Q / E zoom there)
-      pages: this.respec ? undefined : { keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')), pad: pagePad(touchpadSwipes(ctx.engine)) },
+      pages: this.pages,
       gold: () => host.gold(),
       onClose: () => {
         if (!this.closing) host.close();
       },
-      defer: (action) => ctx.input.send({ rl: 'tree', action }),
+      defer: (action) => this.send(action),
     });
     this.view.open();
+  }
+
+  /** What the pad did to the tree is sent, as the view sends what the mouse did: done when it arrives (`draw`), recorded. */
+  private send(action: TreeAction): void {
+    this.host.services.ctx.input.send({ rl: 'tree', action });
+  }
+
+  /** The bottom bar's hints on a device, as the view draws them now (`treeHints`): tools and tests. */
+  hints(mode: TreeHintMode): TreeHint[] {
+    return treeHints({ mode, refunds: !this.rules?.refundBlocked?.(), style: this.host.services.ctx.engine.controls.style, pages: this.pages });
+  }
+
+  /** Tooling and tests: the node under the cursor and where it is (the view's, or without a page the pad's own). */
+  debug(): { hover: string | null; cursor: { x: number; y: number } } {
+    const v = this.view?.debug();
+    if (v) return { hover: v.hover, cursor: v.cursor };
+    return { hover: this.nav?.hover ?? null, cursor: { ...(this.nav?.cursor ?? { x: 0, y: 0 }) } };
   }
 
   close(): void {
     this.closing = true;
     this.view?.dispose();
     this.view = null;
+    this.nav = null;
   }
 
   /** Do what the player did to the tree: through the view (its pulses and messages), or straight on the state. */
@@ -125,12 +171,21 @@ export class TreePanel implements Panel {
     else if (!this.closing) this.host.close();
   }
 
-  /** Each frame: what the player did to the tree (live or replayed), and points that follow the hero's level and deepest depth. */
-  draw(): void {
-    for (const c of this.host.services.ctx.input.commands) {
+  /**
+   * Each frame: what the player did to the tree (live or replayed), the pad (player 1's, from the
+   * engine's input: not on the frame it opened, whose press opened it), and points that follow the
+   * hero's level and deepest depth.
+   */
+  draw(_ui?: UiCanvas, _rect?: { x: number; y: number; w: number; h: number }, time = 0): void {
+    const input = this.host.services.ctx.input;
+    for (const c of input.commands) {
       const m = c as { rl?: string; action?: TreeAction } | null;
       if (m?.rl === 'tree' && m.action) this.perform(m.action);
     }
+    const dt = this.last < 0 ? 0 : Math.min(0.1, Math.max(0, time - this.last));
+    const first = this.last < 0;
+    this.last = time;
+    if (!first && !this.closing) this.pad(input, dt);
     const state = this.state;
     if (!state) return;
     const points = treePoints(this.host);
@@ -140,7 +195,15 @@ export class TreePanel implements Panel {
     }
   }
 
-  /** The view takes its own keys, pointer and pad; only `back` (pad B, the agent API) is the shell's. */
+  /** The pad this frame: the view's cursor, or without a page the panel's own; ✕ □ act as a click would (sent). */
+  private pad(input: TreePadInput, dt: number): void {
+    if (this.view) return this.view.pad(input, dt);
+    const ask = this.nav?.pad(input, dt);
+    if (ask?.take) this.send({ kind: 'activate', id: ask.take });
+    if (ask?.refund) this.send({ kind: 'refund', id: ask.refund });
+  }
+
+  /** The view takes its own keys and pointer, the pad its own (`draw`); only `back` (pad B, the agent API) is the shell's. */
   input(e: UiEvent): boolean {
     return e.kind !== 'back';
   }

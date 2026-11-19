@@ -12,6 +12,7 @@
  */
 import '../../../style.css';
 import { AudioManager } from '../../../engine/audio/AudioManager';
+import { Input } from '../../../engine/input';
 import { pageLanguage } from '../../lang/index';
 import { DEFAULT_TREE_SEED, generateTree } from '../../tree/generate';
 import { PassiveTree, pointBudget, TreeState } from '../../tree/tree';
@@ -58,6 +59,20 @@ const view = new TreeView({
 });
 view.focus(params.get('focus'), 0.12);
 view.open();
+
+// the pad as a game reads it: the engine's input (the pad in use, its sticks after the deadzone),
+// polled once a frame and handed to the view (`TreeView.pad`); it hears no keys (the view's own)
+const input = new Input(null);
+let last = -1;
+const frame = (now: number) => {
+  requestAnimationFrame(frame);
+  const dt = last < 0 ? 0 : Math.min(0.1, Math.max(0, (now - last) / 1000));
+  last = now;
+  input.beginFrame(now / 1000, dt);
+  view.pad(input, dt);
+  input.endFrame();
+};
+requestAnimationFrame(frame);
 
 declare global {
   interface Window {

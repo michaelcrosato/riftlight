@@ -197,8 +197,10 @@ export class ItemsUi {
   skillSlot = 0;
   /** Cursor in art pixels. */
   cursor = { x: 0, y: 0 };
-  /** Last input device that moved the cursor. */
+  /** Last input device that moved the cursor (the pad's while the pad is in use: `followDevice`). */
   cursorMode: 'pointer' | 'pad' = 'pointer';
+  /** The device in use when the windows last looked (`followDevice`). */
+  private deviceSeen: string | null = null;
   altHeld = false;
   message: ItemsMessage | null = null;
   /** Touch: the item whose tooltip a first tap opened (a second tap acts on it). */
@@ -281,18 +283,21 @@ export class ItemsUi {
   openInventory(): void {
     this.inventoryOpen = true;
     this.refreshSize();
+    this.followDevice();
   }
 
   openStash(): void {
     this.left = 'stash';
     this.inventoryOpen = true;
     this.refreshSize();
+    this.followDevice();
   }
 
   openVendor(): void {
     this.left = 'vendor';
     this.inventoryOpen = true;
     this.refreshSize();
+    this.followDevice();
   }
 
   /** The crafting bench: pick an item, then an orb. */
@@ -300,6 +305,7 @@ export class ItemsUi {
     this.left = 'bench';
     this.inventoryOpen = true;
     this.refreshSize();
+    this.followDevice();
   }
 
   /** The skill panel: gems in the four skill slots, beside the bag. */
@@ -307,6 +313,7 @@ export class ItemsUi {
     this.left = 'skills';
     this.inventoryOpen = true;
     this.refreshSize();
+    this.followDevice();
   }
 
   /** Close one side (or everything); the item on the cursor goes back. */
@@ -366,9 +373,21 @@ export class ItemsUi {
     return this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
   }
 
-  /** Whose controls the windows' hints name: the pad cursor's, else the device in use (a finger's, or the mouse's), never the screen's width. */
-  private hintMode(): 'pad' | 'touch' | 'mouse' {
-    return this.cursorMode === 'pad' ? 'pad' : this.ctx.engine.controls.device === 'touch' ? 'touch' : 'mouse';
+  /** Whose controls the windows' hints name: the device in use's (a pad's, a finger's, or the mouse's), never the screen's width. */
+  hintMode(): 'pad' | 'touch' | 'mouse' {
+    const device = this.ctx.engine.controls.device;
+    return device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse';
+  }
+
+  /**
+   * The windows opened, or the device in use changed while they are open: with a pad, its focus at
+   * once (`padStart`: a frame on the item under the cursor, else the first cell), so the first press
+   * moves it. The device is the engine's (recorded), so a replay does the same.
+   */
+  private followDevice(): void {
+    const device = this.ctx.engine.controls.device;
+    this.deviceSeen = device;
+    if (device === 'pad' && this.cursorMode !== 'pad') this.padStart();
   }
 
   /** A window's hint for the device that drives it (`windowHint`, `hintMode`). */
@@ -1035,6 +1054,7 @@ export class ItemsUi {
     this.refreshSize();
     const input = this.ctx.input;
     this.altHeld = input.isDown('AltLeft', 'AltRight');
+    if (this.isOpen && this.ctx.engine.controls.device !== this.deviceSeen) this.followDevice();
     this.pollPointer();
     if (!this.opts.hosted && this.isOpen && input.wasPressed('Escape')) this.closeAll();
     if (!this.opts.hosted && this.isOpen && input.gamepadConnected) {

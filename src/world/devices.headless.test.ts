@@ -4,12 +4,15 @@
 // and panels away, and the rooms' own actions play on a pad and a phone: the Time Lab's rewind,
 // the Gallery's shelves, the car's analog triggers, the Sandbox's carry, Bullet Hell's rumble and
 // a phone's auto-fire; a phone's PRONE in the Moveset Playground, the room card on a pad (the
-// menu), a DualSense's triggers let go in the menu. One engine for the file (the World shell is
+// menu), a DualSense's triggers let go in the menu; every panel's button legend, as Riftlight's. One engine for the file (the World shell is
 // one per process), with a fake 52in1 hub's DualSense so what the controller is sent shows.
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { type Engine, type HubSettingsSource, KEYMAP } from '../engine';
 import { hudTexts, pointAtArt } from '../riftlight/headless';
+import { controlLabel } from '../riftlight/game/controls';
+import { t } from '../riftlight/lang';
 import type { Menu } from '../riftlight/ui/menu';
+import type { Reader } from './ui/reader';
 import { keyText, touchStates, WORLD_CONTROLS, WORLD_TOUCH_BUTTONS } from './controls';
 import type { worldApi } from './index';
 import { shell } from './shell';
@@ -189,6 +192,86 @@ it('the menu names the control that opens each panel on the device in use, and h
     }
   } finally {
     w.close();
+    keyboard();
+  }
+});
+
+it('every panel says what the controls do on a pad and the keyboard (✕ Select ○ Back; a guide L1 R1 or Shift+Tab Tab Headings), none on a phone', () => {
+  const words = [t('legend.select'), t('legend.back'), t('legend.headings')];
+  /** The legend's words, and the controls it draws (the glyphs' actions: `CONTROLS`), under `panel` open. */
+  const look = (panel: 'pause' | 'rooms' | 'tweak' | 'guide' | 'glossary') => {
+    w.open(panel);
+    step(10); // it opens (the legend shows once it has)
+    const glyph = vi.spyOn(shell.ui, 'glyph');
+    try {
+      const shown = texts().filter((s) => words.includes(s));
+      return [shown, glyph.mock.calls.map((c) => c[2])];
+    } finally {
+      glyph.mockRestore();
+      w.close();
+      step(1);
+    }
+  };
+  try {
+    for (const device of ['pad', 'keyboard'] as const) {
+      engine.input.noteDevice(device);
+      for (const panel of ['pause', 'rooms', 'tweak'] as const) expect(look(panel), `${device}: ${panel}`).toEqual([[t('legend.select'), t('legend.back')], ['confirm', 'back']]);
+      for (const panel of ['guide', 'glossary'] as const) expect(look(panel), `${device}: ${panel}`).toEqual([[t('legend.headings'), t('legend.back')], ['heading_prev', 'heading_next', 'back']]);
+    }
+    expect([controlLabel('heading_prev', 'pad'), controlLabel('heading_next', 'pad', 'xbox'), controlLabel('heading_prev', 'keyboard'), controlLabel('heading_next', 'keyboard')], 'L1 R1 (LB RB), Shift+Tab Tab').toEqual(['L1', 'RB', 'Shift+Tab', 'Tab']);
+    engine.input.noteDevice('touch');
+    for (const panel of ['pause', 'guide'] as const) expect(look(panel), `a phone: ${panel}`).toEqual([[], []]);
+  } finally {
+    keyboard();
+  }
+});
+
+it('a guide’s headings, as its legend says: Tab the next, Shift+Tab the one before, R1 / L1 on a pad', () => {
+  w.open('glossary');
+  step(2);
+  const reader = shell.layer.top!.panel as Reader;
+  const at = () => reader.offset;
+  try {
+    expect(at()).toBe(0);
+    press('Tab');
+    const first = at();
+    press('Tab');
+    const second = at();
+    expect(second, 'Tab, Tab: the second heading').toBeGreaterThan(first);
+    engine.input.setKey('ShiftLeft', true);
+    press('Tab');
+    engine.input.setKey('ShiftLeft', false);
+    step(1);
+    expect(at(), 'Shift+Tab: back to the first').toBe(first);
+    tap(5); // R1
+    expect(at(), 'R1: the second again').toBe(second);
+    tap(4); // L1
+    expect(at(), 'L1: the first again').toBe(first);
+  } finally {
+    w.close();
+    step(1);
+    keyboard();
+  }
+});
+
+it('the Tweak panel’s footer says how to change a row, and how to close it only where no legend says so (a phone)', () => {
+  /** The Tweak panel's footer on `device` (a focused row's hint shows in its place). */
+  const footer = (device: 'pad' | 'keyboard' | 'touch') => {
+    engine.input.noteDevice(device);
+    w.open('tweak');
+    step(10);
+    try {
+      return (shell.layer.find('tweak') as Menu).footer();
+    } finally {
+      w.close();
+      step(1);
+    }
+  };
+  try {
+    expect(footer('pad'), 'the legend says ○ Back').toBe('D-pad change');
+    expect(footer('keyboard'), 'the legend says Esc Back').toBe('Arrows change');
+    expect(footer('touch'), 'no legend on a phone').toBe('Tap change · Swipe closes');
+  } finally {
     keyboard();
   }
 });
