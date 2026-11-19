@@ -148,6 +148,12 @@ export interface TouchFrame {
   skills: readonly SkillSlotView[];
   /** The interaction on offer (`Riftlight.interactOffer`: a short verb, Talk, Open, Take, Go, and its target, in the player's language), or null. */
   interact: { verb: string; name: string } | null;
+  /**
+   * Where the floating stick's zone gives way while you play (art pixels): what a finger taps there
+   * (the loot labels the last frame drew: `Riftlight.touchFrame`); a touch elsewhere in the zone
+   * still brings the stick. A showcase mode's panel takes its place (`showcase.giveWay`).
+   */
+  giveWay?: readonly Box[];
 }
 
 /**
@@ -247,15 +253,15 @@ export class TouchPad {
     return touchLayout(width, height, this.buttons).map((c) => this.toArt(c));
   }
 
-  /** Art pixels as a client CSS px rect: `Pointer.toArt` the other way, on the canvas's client rect. Null without a page. */
-  private toClient(b: Box): Box | null {
-    const canvas = this.engine.gpu?.renderer.domElement;
-    if (!canvas) return null;
+  /** Art pixel rects as client CSS px rects: `Pointer.toArt` the other way, on the canvas's client rect. None without a page. */
+  private toClientAll(boxes: readonly Box[]): Box[] {
+    const canvas = boxes.length ? this.engine.gpu?.renderer.domElement : null;
+    if (!canvas) return [];
     const r = canvas.getBoundingClientRect();
     const res = this.engine.renderer.resolution;
     const kx = r.width / res.width;
     const ky = r.height / res.height;
-    return { x: r.left + b.x * kx, y: r.top + b.y * ky, w: b.w * kx, h: b.h * ky };
+    return boxes.map((b) => ({ x: r.left + b.x * kx, y: r.top + b.y * ky, w: b.w * kx, h: b.h * ky }));
   }
 
   /**
@@ -289,9 +295,10 @@ export class TouchPad {
     const touch = this.engine.touch;
     if (!touch) return;
     touch.show(f.showcase ? f.showcase === true || f.showcase.controls !== false : f.playing); // none over the Hall's card
-    // the floating stick's zone gives way to a panel open over it (photo mode's rows take taps there)
-    const way = typeof f.showcase === 'object' ? (f.showcase.giveWay ?? []) : [];
-    touch.giveWay(way.flatMap((b) => this.toClient(b) ?? []));
+    // the floating stick's zone gives way to a panel open over it (photo mode's rows take taps
+    // there), and while you play to what a finger taps in it (a loot label)
+    const way = typeof f.showcase === 'object' ? (f.showcase.giveWay ?? []) : f.showcase ? [] : (f.giveWay ?? []);
+    touch.giveWay(this.toClientAll(way));
     if (!touch.visible) return;
     // in the showcase the buttons are the stage's (B jumps), not the skill bar's
     const find = (slot: SkillSlotView['slot']) => (f.showcase ? undefined : f.skills.find((s) => s.slot === slot));

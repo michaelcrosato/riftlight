@@ -121,8 +121,8 @@ the hint names, while a desktop's holds the taller of the mouse's and the keys')
 
 The engine's touch buttons are the skill bar, laid out as
 an action cluster: a floating joystick (`touchStick: 'floating'`: its base comes under the thumb
-anywhere in the lower left; the HUD lays out around where it rests, and keeps what a finger taps,
-the corner map, out of its zone); a big attack button in the bottom-right corner,
+anywhere in the lower left; the HUD lays out around where it rests, keeps the corner map out of its
+zone, which gives way to loot labels: `TouchFrame.giveWay`); a big attack button in the bottom-right corner,
 skills 1-4 on an arc around it, the dodge outside the arc and a contextual interact button
 next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the pause menu, where the
 inventory, skills, tree and settings are) top-left. In 52in1 (the page's `window.AIHubSettings`,

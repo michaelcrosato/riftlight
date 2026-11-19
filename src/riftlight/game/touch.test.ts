@@ -5,24 +5,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Engine, TouchButtonState } from '../../engine';
 import { KEYS } from './controls';
+import type { Box } from '../ui/layout';
 import { HUB_WAKE, MAP_ICON, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES, TouchPad, touchLayout } from './touch';
 
-/** An engine with touch controls that records what the pad sets on them, in 52in1 (`hub`) or not. */
+/** An engine with touch controls that records what the pad sets on them (and where the stick's zone gives way: `ways`), in 52in1 (`hub`) or not. */
 function fakeEngine(hub: boolean) {
   const set = new Map<string, TouchButtonState>();
+  const ways: Box[][] = [];
   const viewport = { width: 390, height: 844, dpr: 3 };
   const engine = {
     hubSettings: { present: hub },
     input: { device: 'touch' },
-    renderer: { viewport, touchDensity: 2, framing: { offsetX: 0, offsetY: 0, cssWidth: 390, cssHeight: 844, artWidth: 195, artHeight: 422 } },
+    renderer: { viewport, touchDensity: 2, resolution: { width: 195, height: 422 }, framing: { offsetX: 0, offsetY: 0, cssWidth: 390, cssHeight: 844, artWidth: 195, artHeight: 422 } },
+    // the page's canvas: two CSS px an art pixel, 10 px down the page
+    gpu: { renderer: { domElement: { getBoundingClientRect: () => ({ left: 0, top: 10, width: 390, height: 844 }) } } },
     touch: {
       visible: true,
       show() {},
-      giveWay() {},
+      giveWay: (rects: readonly Box[]) => void ways.push(rects.map((r) => ({ ...r }))),
       set: (code: string, s: TouchButtonState) => set.set(code, { ...set.get(code), ...s }),
     },
   };
-  return { engine: engine as unknown as Engine, set };
+  return { engine: engine as unknown as Engine, set, ways };
 }
 
 describe('≡ in 52in1', () => {
@@ -82,5 +86,22 @@ describe('the Map button in 52in1', () => {
     pad.sync({ playing: true, skills: [], interact: null });
     expect(set.get(TOUCH_CODES.map)?.hidden, 'out of a round: ≡, whose pause menu has Map').toBe(true);
     expect(MAP_ICON.rows.every((r) => r.length === MAP_ICON.rows[0]!.length), 'a rectangle of pixels').toBe(true);
+  });
+});
+
+describe("the floating stick's zone", () => {
+  it('gives way to what a finger taps while you play (the loot labels, in client CSS px), to a showcase panel in a showcase, and to nothing else', () => {
+    const { engine, ways } = fakeEngine(false);
+    const pad = new TouchPad(engine);
+    const label = { x: 10, y: 300, w: 40, h: 10 };
+    pad.sync({ playing: true, skills: [], interact: null, giveWay: [label] });
+    expect(ways.at(-1), 'the label, in client CSS px').toEqual([{ x: 20, y: 610, w: 80, h: 20 }]);
+    pad.sync({ playing: true, skills: [], interact: null });
+    expect(ways.at(-1), 'none drawn: the whole zone the stick’s').toEqual([]);
+    const panel = { x: 0, y: 200, w: 100, h: 100 };
+    pad.sync({ playing: true, showcase: { interact: null, giveWay: [panel] }, skills: [], interact: null, giveWay: [label] });
+    expect(ways.at(-1), 'a showcase panel, not the labels').toEqual([{ x: 0, y: 410, w: 200, h: 200 }]);
+    pad.sync({ playing: true, showcase: true, skills: [], interact: null, giveWay: [label] });
+    expect(ways.at(-1), 'a showcase mode with no panel: none').toEqual([]);
   });
 });

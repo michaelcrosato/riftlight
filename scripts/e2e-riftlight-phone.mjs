@@ -6,7 +6,7 @@
 //   - the touch controls stay off the title menu and off every panel, and come back after it
 //   - every skill-bar slot has a touch button (attack, dodge, skills 1-4, ≡) at least 40 CSS px
 //     across, and tapping each one reaches the game (its key; the four skills fire)
-//   - the art is Riftlight's phone density (two CSS pixels per art pixel at least: 195 rows in
+//   - the art is Riftlight's phone density (two CSS pixels per art pixel at DPR 2: 195 rows in
 //     landscape); the joystick floats (its zone in the lower left), and nothing on the HUD a
 //     finger taps (the corner map) is in its zone
 //   - no fixed-HUD element (orbs, XP bar, level, top-left block, minimap, gold, the level card)
@@ -41,6 +41,11 @@
 //     and ≡'s pause menu has Map, which a tap opens; in a 52in1 round there (faked: the round's
 //     command with no hub behind it) ≡ is hidden and the Map button in its place (below the band, a
 //     thumb across, drawn as a map) opens the level's map with a real tap, and closes it
+//   - a Pixel's DPR 2.625 (portrait 412×839; landscape 863×360 and 923×340, under Chrome's bar):
+//     about two CSS px an art pixel (5 device px; landscape about 180 rows, as at DPR 2 or 3), every
+//     title entry in view, the bag's, the vendor's and the stash's windows on screen, no HUD element
+//     under a touch control; a real tap on a loot label inside the floating stick's zone picks the
+//     item up (the zone gives way to the labels drawn), a thumb in the zone beside it moves the stick
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -952,6 +957,168 @@ export async function runRiftlightPhone(h, orientation) {
       await pageH.waitForTimeout(1000);
       await pageH.screenshot({ path: new URL(`${shotTag}-hub.png`, OUT).pathname });
       checkClean(await state(pageH), ctx.logs, `${at}: `);
+      await ctx.browser.close();
+      ctx = null;
+    }
+
+    // a Pixel's DPR 2.625 (held sideways, and under Chrome's bar): the art keeps about the rows a DPR 2
+    // or 3 phone of its size draws (5 device px an art pixel, 1.9 CSS px), so every title entry is in
+    // view, every item window on screen and no HUD under a control (its DOM rect); a real touch on a
+    // loot label inside the floating stick's zone picks the item up (the zone gives way to the labels
+    // as drawn), one in the zone beside it moves the stick
+    for (const vp of portrait ? [{ width: 412, height: 839 }] : [{ width: 863, height: 360 }, { width: 923, height: 340 }]) {
+      const at = `${orientation} ${vp.width}×${vp.height} at DPR 2.625`;
+      const shotTag = `${tag}-${vp.width}x${vp.height}`;
+      ctx = await launch(exe, s, { viewport: vp, deviceScaleFactor: 2.625, hasTouch: true, isMobile: true });
+      const pg = ctx.page;
+      const RR = (fn, arg) => pg.evaluate(fn, arg);
+      const snap = async (name) => {
+        await RR(() => (window.__PIXEL_ENGINE__.manual = false));
+        await pg.waitForTimeout(1000);
+        await pg.screenshot({ path: new URL(`${shotTag}-${name}.png`, OUT).pathname });
+        await RR(() => (window.__PIXEL_ENGINE__.manual = true));
+      };
+      await pg.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
+      await ready(pg);
+      await pg.waitForFunction(() => window.__RIFTLIGHT__?.state, null, { timeout: 60000 });
+      const first = await RR(() => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        e.manual = true;
+        e.input.noteTouch();
+        e.step(3);
+        const c = e.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / rl.game.ui.w;
+        const ws = rl.ui.widgets().filter((w) => w.kind === 'button');
+        return { art: { ...e.renderer.resolution }, k, top: rl.state().ui.at(-1), ids: ws.map((w) => w.id), hidden: ws.filter((w) => !w.rect).map((w) => w.id), least: Math.min(...ws.filter((w) => w.rect).map((w) => w.rect.h * k)) };
+      });
+      check(Math.abs(first.k - 2) <= 0.1 || (portrait && first.k >= 1.9), `${at}: about two CSS px an art pixel, or more upright (${first.art.width}×${first.art.height}, ${first.k.toFixed(3)} CSS px)`);
+      if (!portrait) check(first.art.height >= 179, `${at}: about the rows a DPR 2 or 3 phone of its size draws (${first.art.height})`);
+      check(first.top === 'title' && first.ids.length >= 4 && first.hidden.length === 0 && first.least >= 40, `${at}: every title entry shows, at least 40 CSS px tall (${first.ids.join(' ')}; hidden ${first.hidden.join(' ') || 'none'}; ${Math.round(first.least)} CSS px)`);
+      await snap('title');
+      // the item windows: the bag, the vendor's and the stash's, wholly on screen
+      const windows = await RR(() => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        rl.newRun({ slot: 0, seed: 4242 });
+        e.input.noteTouch();
+        e.step(5);
+        const { width: W, height: H } = e.renderer.resolution;
+        const off = [];
+        for (const view of ['inventory', 'vendor', 'stash']) {
+          rl.ui.open(view);
+          e.step(3);
+          for (const r of rl.game.ports.loot.ui.rects()) if (r.x < 0 || r.y < 0 || r.x + r.w > W || r.y + r.h > H) off.push(`the ${view}'s ${JSON.stringify(r)}`);
+          rl.ui.close();
+          e.step(2);
+        }
+        rl.ui.open('vendor');
+        e.step(3);
+        return off;
+      });
+      check(windows.length === 0, `${at}: the bag, the vendor's and the stash's windows are on screen${windows.length ? ` (off: ${windows.join(', ')})` : ''}`);
+      await snap('vendor');
+      // a level: no zone of the HUD under a touch control (their DOM rects, and as the HUD has them)
+      const hud = await RR(async () => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        rl.ui.close();
+        await rl.enterDepth(1);
+        rl.dev.god = true;
+        rl.dev.ai = false;
+        e.input.noteTouch();
+        e.step(30);
+        const vis = [...document.querySelectorAll('.touch-ui .stick, .touch-ui > button')]
+          .filter((el) => getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.touch-ui.hidden'))
+          .map((el) => {
+            const b = el.getBoundingClientRect();
+            return { code: el.dataset.code ?? 'stick', x: b.left, y: b.top, w: b.width, h: b.height };
+          });
+        const h = rl.ui.hud();
+        const c = e.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / h.art.w;
+        const meet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+        const zones = h.zones.map((z) => ({ id: z.id, x: c.left + z.x * k, y: c.top + z.y * k, w: z.w * k, h: z.h * k }));
+        return { ids: zones.map((z) => z.id), under: zones.flatMap((z) => vis.filter((v) => meet(z, v)).map((v) => `${z.id} under ${v.code}`)), artUnder: h.zones.flatMap((z) => h.controls.filter((o) => meet(z, o)).map(() => `${z.id} under a control's place`)) };
+      });
+      check(hud.under.length === 0 && hud.artUnder.length === 0, `${at}: no HUD element under a touch control (${[...hud.under, ...hud.artUnder].join(', ') || hud.ids.join(', ')})`);
+      await snap('level');
+      // a loot label in the floating stick's zone: items dropped round the hero until one's label is
+      // in the zone, clear of the controls (a button, the stick at rest); real touches (CDP)
+      const cdpL = await pg.context().newCDPSession(pg);
+      let downL = 0;
+      let atL = 0;
+      const touchL = (type, points) => {
+        const now = Date.now() / 1000; // real time: CDP's timestamp is seconds since the epoch
+        atL = downL === 0 ? now : Math.min(now, atL + 1 / 60);
+        downL = points.length;
+        return cdpL.send('Input.dispatchTouchEvent', { type, timestamp: atL, touchPoints: points.map(([x, y, id]) => ({ x, y, id, radiusX: 3, radiusY: 3, force: 1 })) });
+      };
+      const spot = await RR(() => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        const g = rl.game;
+        const loot = g.ports.loot;
+        const p = g.hero.actor.position;
+        const c = e.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / g.ui.w;
+        const r = e.touch.rects();
+        const z = r.zone;
+        const controls = [r.stick, ...r.buttons.map((b) => b.rect)].filter(Boolean);
+        const inside = (b, x, y) => x > b.left && x < b.right && y > b.top && y < b.bottom;
+        const client = (a) => ({ left: c.left + a.x * k, top: c.top + a.y * k, right: c.left + (a.x + a.w) * k, bottom: c.top + (a.y + a.h) * k });
+        for (const [dx, dz] of [[-3, 3], [-2, 4], [0, 4], [-4, 1], [-4, 3], [2, 4], [-3, 0], [-1, 3], [1, 3], [-2, 2]]) loot.spawn([{ kind: 'item', item: loot.give(g.services.rng, 1) }], p.clone().set(p.x + dx, 0, p.z + dz), g.level, g.services.rng);
+        e.step(10);
+        const labels = g.touchable.loot.map((l) => ({ id: l.id, ...client(l.rect) }));
+        const pick = labels.find((l) => {
+          const x = (l.left + l.right) / 2;
+          const y = (l.top + l.bottom) / 2;
+          return inside(z, x, y) && !controls.some((b) => inside(b, x, y));
+        });
+        if (!pick) return { labels: labels.length, zone: z && { left: z.left, top: z.top, right: z.right, bottom: z.bottom } };
+        const x = (pick.left + pick.right) / 2;
+        const y = (pick.top + pick.bottom) / 2;
+        const el = document.elementFromPoint(x, y);
+        // a point in the zone off every label and control (by 20 px): the stick's (its base comes
+        // under the thumb a radius in from the screen's edge at least, so not too near the left)
+        const off = (() => {
+          for (let fy = 0.8; fy >= 0.2; fy -= 0.1)
+            for (const fx of [0.4, 0.5, 0.6, 0.3]) {
+              const px = z.left + z.width * fx;
+              const py = z.top + z.height * fy;
+              const near = (b) => px > b.left - 20 && px < b.right + 20 && py > b.top - 20 && py < b.bottom + 20;
+              if (!labels.some(near) && !controls.some(near) && px > z.left + 70 && px + 60 < z.right) return { x: px, y: py };
+            }
+          return null;
+        })();
+        return { labels: labels.length, x, y, id: pick.id, hit: el ? `${el.tagName}${el.className ? `.${el.className}` : ''}` : null, ground: rl.state().loot.items, off };
+      });
+      if (spot.x === undefined) check(false, `${at}: a loot label inside the stick's zone, clear of the controls (${spot.labels} labels, zone ${JSON.stringify(spot.zone)})`);
+      else {
+        await snap('loot');
+        await touchL('touchStart', [[spot.x, spot.y, 71]]);
+        await touchL('touchEnd', []);
+        const took = await RR((before) => {
+          const rl = window.__RIFTLIGHT__;
+          const e = window.__PIXEL_ENGINE__;
+          for (let f = 0; f < 300 && rl.state().loot.items >= before; f++) e.step(1);
+          return rl.state().loot.items;
+        }, spot.ground);
+        check(took < spot.ground, `${at}: a real tap on a loot label inside the floating stick's zone picks the item up (it reached ${spot.hit}; ground items ${spot.ground} → ${took})`);
+        let analog = null;
+        if (spot.off) {
+          await touchL('touchStart', [[spot.off.x, spot.off.y, 72]]);
+          await touchL('touchMove', [[spot.off.x + 50, spot.off.y, 72]]);
+          analog = await RR(() => {
+            window.__PIXEL_ENGINE__.step(1);
+            return window.__PIXEL_ENGINE__.input.analog.x;
+          });
+          await touchL('touchEnd', []);
+          await RR(() => window.__PIXEL_ENGINE__.step(2));
+        }
+        check(analog !== null && analog > 0.3, `${at}: a thumb in the zone beside the labels still moves the stick (analog ${analog}${spot.off ? ` at ${Math.round(spot.off.x)},${Math.round(spot.off.y)}` : '; no spot in the zone off the labels'})`);
+      }
+      checkClean(await state(pg), ctx.logs, `${at}: `);
       await ctx.browser.close();
       ctx = null;
     }

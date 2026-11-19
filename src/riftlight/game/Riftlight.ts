@@ -2137,12 +2137,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /**
    * What the touch buttons show this frame (`TouchPad.sync`; headless, where there are none, what
    * they would): shown while you play, no ≡ in a 52in1 round and the Map button in its place where
-   * the corner map takes no tap (`mapUntapped`), the bar's icons and cooldowns, what F does here.
+   * the corner map takes no tap (`mapUntapped`), the bar's icons and cooldowns, what F does here,
+   * and where the floating stick's zone gives way: the loot labels the last frame drew
+   * (`touchable.loot`), which a finger's tap picks up (`touchTarget`), in the zone too. A tap on a
+   * townsperson or the stash does nothing for a finger (the interact button talks, opens), so the
+   * zone keeps those.
    */
   touchFrame(): TouchFrame {
     const playing = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top;
     const round = !!this.round;
-    return { playing, round, map: playing && round && this.mapUntapped(), showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null };
+    const giveWay = playing && !this.showcase.active ? this.touchable.loot.map((l) => l.rect) : [];
+    return { playing, round, map: playing && round && this.mapUntapped(), showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null, giveWay };
   }
 
   /** What F (the touch interact button) would do now: the verb and its target, or null. */
