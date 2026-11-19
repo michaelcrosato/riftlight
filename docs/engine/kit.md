@@ -27,21 +27,25 @@ another agent*):
   (controller first at ten feet, keyboard and mouse native, prompts for the device in use, menus,
   touch as an add-on, the player's 52in1 settings and the DualSense, sessions in every online mode
   and moments, the head tags, play on one device), as a checklist, then recipes. Its blocks are
-  Beacon Yard and Gem Rush, `examples/beacon-yard.html` and `examples/gem-rush.html`.
+  Beacon Yard and Gem Rush, `examples/beacon-yard.html` and `examples/gem-rush.html`; its `html
+  gem-rush` fence is Gem Rush's head (`guideHeads`), which its page carries after 52in1's session
+  client (`scripts/hub/session.js`, byte for byte: `examplePage`), so the page joins a round as
+  handed out.
   `src/guide-controls.test.ts` checks their imports, plays both headless (prompts follow the device,
   Options pauses as it is let go and never under 52in1's chord; a moment in a `LocalHub` round
   readies up by itself and reports once), checks the codes and names its prose and its unnamed code
   give (a dotted one walked member by member on a live engine and session, `Game.<x>` one of the
   `Game` hooks, a bare option or field such as `touchDensity: 2` or `micLater` one the engine's
-  source declares: `EngineOptions`, the touch controls, the HUD, 52in1's settings), runs a page
-  holding its head tags through 52in1's catalogue checker (`checkPage`,
+  source declares: `EngineOptions`, the touch controls, the HUD, 52in1's settings), runs the page
+  the kit writes for Gem Rush through 52in1's catalogue checker (`checkPage`,
   `scripts/hub/catalogue-check.mjs`) and holds its budget; every text the games draw lies inside the
   HUD, clear of the others and in whole words, in every state, on a phone held either way, a
   360x1000 window and a TV; what a player needs is in view at every window shape (Gem Rush's whole
   arena, every beacon from Beacon Yard's start: both pass the camera a `minWidth`, so a phone held
   upright zooms out, past `minZoom` for a 360x1000 window); the player's wheel and + / - zoom both
   and the zoom stays; Gem Rush alone plays again once it is over. The `bundle` e2e suite plays Gem
-  Rush's own page in a `LocalHub` round (no ⚙, Esc and Options never pause it), and every game page
+  Rush's own page in a `LocalHub` round (no ⚙, Esc and Options never pause it) and in 52in1's
+  session harness (a parallel round of two), and every game page
   of the kit (the starter, Cliff Run, both games here, RECIPES.md's and Market Corner) on a phone
   (Playwright's touch screen, upright and sideways, real taps) and on a TV with a fake pad, in every
   state a player reaches (playing, a menu, the settings, won and lost, a 52in1 round's start, Look

@@ -5,8 +5,10 @@
 // (`worldTouchLayout`, which a page without its DOM, a replay, follows too), and clear of the
 // room's title; a replay of a phone's recording without a page (`npm run replay`, which boots
 // with no touch option) lays it out as the phone did. With a mouse and a keyboard the rooms' lines
-// and panels stay where they always were. The frames stay in the e2e suite `world`. One engine for
-// the file (the shell is one per process).
+// and panels stay where they always were. Every room's card fits a phone held either way and a
+// desktop window: inside the screen, clear of the controls, its paragraph in whole sentences (or
+// the words before its colon) and its tries whole, one at least. The frames stay in the e2e suite
+// `world`. One engine for the file (the shell is one per process).
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { type Engine, HeadlessView, hudPlace, type Recording } from '../engine';
 import { touchStates, worldTouchLayout } from './controls';
@@ -29,7 +31,7 @@ interface Box {
   w: number;
   h: number;
 }
-const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const overlaps = (a: Omit<Box, 'what'>, b: Omit<Box, 'what'>) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /** The phone's controls this room shows, in art pixels, from their data on the page's viewport (CSS px). */
 function controls(): Box[] {
@@ -121,6 +123,99 @@ it(
     }
     expect(amiss).toEqual([]);
     expect(drawn, 'the rooms drew their lines').toBeGreaterThan(30);
+    expect(engine.state().errors).toEqual([]);
+  },
+  240_000,
+);
+
+/** A card's text read without the spaces its wrap broke at (MID-SWING, F[-F]F). */
+const flat = (t: string) => t.replace(/\s+/g, '');
+
+/** The room card the next frame draws (null: none): its rect and the texts in it, placed as the HUD places them. */
+function card(): { rect: Box; texts: Box[] } | null {
+  const s = shell as unknown as { drawCard: (...a: unknown[]) => Box };
+  const own = s.drawCard;
+  const hud = engine.hud;
+  const text = hud.text;
+  const texts: Box[] = [];
+  let rect: Box | null = null;
+  let inside = false;
+  hud.text = (x, y, t, o = {}) => {
+    if (inside && t.trim()) {
+      const k = Math.max(1, Math.round(o.scale ?? 1));
+      const m = hud.measure(t, k);
+      const [px, py] = hudPlace(x, y, m.width, m.height, o.anchor ?? 'top-left', { width: hud.width, height: hud.height });
+      texts.push({ what: t, x: px, y: py, w: m.width + (o.shadow === false ? 0 : k), h: m.height + (o.shadow === false ? 0 : k) });
+    }
+    text.call(hud, x, y, t, o);
+  };
+  s.drawCard = function (this: unknown, ...a: unknown[]) {
+    inside = true;
+    try {
+      return (rect = { ...own.apply(this, a), what: 'the card' });
+    } finally {
+      inside = false;
+    }
+  };
+  try {
+    engine.step(1);
+  } finally {
+    hud.text = text;
+    delete (s as Partial<typeof s>).drawCard; // the prototype's again
+  }
+  return rect && { rect, texts };
+}
+
+it(
+  'every room\'s card fits a phone held upright and sideways and a desktop window: inside the screen and clear of the controls, its paragraph in whole sentences (or the words before its colon), its tries whole, one at least',
+  async () => {
+    const amiss: string[] = [];
+    let summaries = 0;
+    try {
+      for (const [viewport, phone] of [
+        [{ width: 390, height: 844, dpr: 2 }, true],
+        [{ width: 844, height: 390, dpr: 2 }, true],
+        [{ width: 1280, height: 720, dpr: 1 }, false],
+      ] as const) {
+        (engine.renderer as HeadlessView).setViewport(viewport);
+        engine.controls.touch = phone; // a desktop: a mouse and a keyboard, no touch controls
+        for (const r of w.rooms()) {
+          await w.goto(r.id, { instant: true });
+          if (phone) engine.input.noteTouch();
+          else engine.input.noteDevice('keyboard');
+          engine.step(5);
+          const at = `${r.id}'s card at ${viewport.width}x${viewport.height} (${engine.hud.width}x${engine.hud.height})`;
+          const drawn = card();
+          if (!drawn) {
+            amiss.push(`${at}: not shown`);
+            continue;
+          }
+          const { rect } = drawn;
+          if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > engine.hud.width || rect.y + rect.h > engine.hud.height) amiss.push(`${at}: off the screen ${JSON.stringify(rect)}`);
+          for (const c of shell.touchBoxes()) if (overlaps(rect, c)) amiss.push(`${at}: ${JSON.stringify(rect)} over a control ${JSON.stringify(c)}`);
+          for (const b of drawn.texts) if (b.x < rect.x || b.y < rect.y || b.x + b.w > rect.x + rect.w || b.y + b.h > rect.y + rect.h) amiss.push(`${at}: ${b.what} over its edge`);
+          // its body: the rows under the title and the wing, over the footer's prompts
+          const body = drawn.texts.filter((b) => b.y >= rect.y + 26 && b.y < rect.y + rect.h - 12).map((b) => b.what);
+          const first = body.findIndex((l) => l.startsWith('- '));
+          const def = roomGame(engine).def;
+          const about = shell.keys(def.about).toUpperCase();
+          const shown = flat((first < 0 ? body : body.slice(0, first)).join(''));
+          // whole: its first sentences (all of them, or fewer), or the words before the first one's colon
+          const sentences = about.split(/(?<=[.!?])\s+/);
+          const colon = sentences[0]!.search(/:\s/);
+          const whole = [...sentences.map((_, k) => sentences.slice(0, k + 1).join(' ')), ...(colon > 0 ? [`${sentences[0]!.slice(0, colon)}.`] : [])].map(flat);
+          if (!whole.includes(shown)) amiss.push(`${at}: its paragraph cut short: ${body.slice(0, first < 0 ? undefined : first).join(' ')}`);
+          if (shown !== flat(about)) summaries += phone ? 1 : 0;
+          const tries = def.try.slice(0, 2).map((t) => `- ${shell.keys(t)}`.toUpperCase());
+          const bullets = first < 0 ? [] : body.slice(first).reduce<string[]>((out, row) => (row.startsWith('- ') ? [...out, row] : [...out.slice(0, -1), `${out.at(-1)} ${row}`]), []);
+          if (!bullets.length || bullets.some((b, i) => flat(b) !== flat(tries[i] ?? ''))) amiss.push(`${at}: its tries ${JSON.stringify(bullets)}, not whole ones of ${JSON.stringify(tries)}`);
+        }
+      }
+    } finally {
+      engine.controls.touch = true;
+    }
+    expect(amiss).toEqual([]);
+    expect(summaries, 'some cards a summary on a phone').toBeGreaterThan(10);
     expect(engine.state().errors).toEqual([]);
   },
   240_000,

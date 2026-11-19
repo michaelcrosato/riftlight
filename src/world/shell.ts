@@ -735,19 +735,28 @@ export class WorldShell {
     return out;
   }
 
-  /** The room's card (top left: what it shows, what to try), as tall as the screen has room for. Returns its rect. */
+  /**
+   * The room's card (top left: what it shows, what to try), as tall as the screen has room for, a
+   * summary where all of it doesn't fit (`cardLines`). Returns its rect.
+   */
   private drawCard(def: RoomDef, device: InputDevice): Rect {
     const ui = this.ui;
-    const w = Math.min(204, ui.w - 8);
-    const inner = w - 12;
     const x = 4;
     const y = Math.max(4, this.touchCorner().bottom + 1);
-    const about = wrap(this.keys(def.about).toUpperCase(), inner);
-    const tries = def.try.slice(0, 2).flatMap((t) => wrap(`- ${this.keys(t)}`.toUpperCase(), inner));
-    // at most half the screen on a phone (the room stays in view under it); a tall screen gets it all
-    const room = Math.floor((Math.min(ui.h - 60, Math.max(ui.h * 0.5, 120)) - y) / 9);
-    const lines = [...about, ...(tries.length ? ['', ...tries] : [])].slice(0, Math.max(3, room));
-    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const about = this.keys(def.about).toUpperCase();
+    const layout = (w: number) => {
+      const inner = w - 12;
+      const tries = def.try.slice(0, 2).map((t) => wrap(`- ${this.keys(t)}`.toUpperCase(), inner));
+      // clear of a phone's controls under the card; at most half the screen on a phone (the room
+      // stays in view under it) unless only more holds a summary; a tall screen gets it all
+      const floor = this.floor(x, x + w) - 42;
+      const rows = (bottom: number) => Math.max(3, Math.floor((bottom - y) / 9));
+      return { w, ...cardLines(about, tries, inner, rows(Math.min(ui.h - 60, Math.max(ui.h * 0.5, 120), floor)), rows(Math.min(ui.h - 60, floor))) };
+    };
+    // a column, wider (a phone held sideways) only where the column holds not even a summary whole
+    const column = layout(Math.min(204, ui.w - 8));
+    const wide = !column.whole && ui.w - 8 > 204 ? layout(Math.min(336, ui.w - 8)) : null;
+    const { w, lines } = wide?.whole ? wide : column;
     const h = 28 + lines.length * 9 + 14;
     const wg = wing(def.wing);
     ui.panel(x, y, w, h, 'ink', wg.color);
@@ -1035,6 +1044,36 @@ function roomRuntime(game: RoomGame): RoomRuntime {
     },
     held: (...codes: string[]) => shell.held(codes),
   };
+}
+
+/**
+ * The room card's lines, `inner` art pixels wide: the room's paragraph (`about`), a gap, then its
+ * tries (each wrapped already), at most `max` of them (`all`). Where that doesn't hold them all (a
+ * phone), what goes goes whole (`whole`): the tries that fit after a short summary (the paragraph's
+ * words before its first colon, or its first sentence), then as many of its sentences as still fit,
+ * in `max` rows, else in `most` with a try or more; never a sentence cut short but as a last resort.
+ */
+function cardLines(about: string, tries: readonly (readonly string[])[], inner: number, max: number, most = max): { lines: string[]; all: boolean; whole: boolean } {
+  const lines = (text: string, n: number) => [...wrap(text, inner), ...(n ? ['', ...tries.slice(0, n).flat()] : [])];
+  const all = lines(about, tries.length);
+  if (all.length <= max) return { lines: all, all: true, whole: true };
+  const sentences = about.split(/(?<=[.!?])\s+/);
+  const first = sentences[0]!;
+  const colon = first.search(/:\s/);
+  const head = colon > 0 ? `${first.slice(0, colon)}.` : first;
+  const summary = (rows: number) => {
+    let n = tries.length;
+    while (n > 1 && lines(head, n).length > rows) n--;
+    if (lines(head, n).length > rows) return null;
+    let text = head;
+    for (let k = 1; k <= sentences.length && lines(sentences.slice(0, k).join(' '), n).length <= rows; k++) text = sentences.slice(0, k).join(' ');
+    return lines(text, n);
+  };
+  const short = summary(max) ?? (most > max ? summary(most) : null);
+  if (short) return { lines: short, all: false, whole: true };
+  const cut = all.slice(0, max); // the last resort
+  while (cut.at(-1) === '') cut.pop();
+  return { lines: cut, all: false, whole: false };
 }
 
 /**

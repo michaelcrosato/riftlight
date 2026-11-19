@@ -21,7 +21,8 @@ import { tsImport } from 'tsx/esm/api';
 import ts from 'typescript';
 import { build } from 'vite';
 import { generateApi } from './bundle/api.mjs';
-import { guideBlocks, startsEngine } from './bundle/guide.mjs';
+import { examplePage, guideBlocks, guideHeads, startsEngine } from './bundle/guide.mjs';
+import { SESSION_CLIENT } from './hub/head.mjs';
 import { helpExit } from './manual.mjs';
 
 helpExit(import.meta.url);
@@ -158,33 +159,27 @@ const pkg = (name, title, url) => {
   const p = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
   return { name: `${title} (${name})`, version: p.version, licence: p.license, url, text: readFileSync(join(dir, 'LICENSE'), 'utf8') };
 };
-const code = [pkg('three', 'three.js', 'https://threejs.org/'), pkg('@dimforge/rapier3d', 'Rapier', 'https://rapier.rs')];
+// 52in1's session client, pasted unmodified into examples/gem-rush.html (the 52in1 project's own
+// code, which says to paste it into games as it is): no licence file or SPDX tag to copy
+const sessionHead = readFileSync(join(root, 'scripts/hub/session.js'), 'utf8').match(/aihub-session (\S+)/);
+const session = {
+  name: "52in1's session client (aihub-session, in examples/gem-rush.html)",
+  version: sessionHead?.[1] ?? '?',
+  licence: 'no licence declared',
+  url: 'https://github.com/michaelcrosato/52in1 (lib/hub/session.js)',
+  text: 'aihub-session declares no licence (no SPDX tag, no licence file). Its header says: "Paste it into your game unmodified." It is the 52in1 project\'s own client, carried here unmodified.',
+};
+const code = [pkg('three', 'three.js', 'https://threejs.org/'), pkg('@dimforge/rapier3d', 'Rapier', 'https://rapier.rs'), session];
 writeFileSync(join(out, 'CREDITS.md'), creditsMarkdown({ version, builtins: Object.keys(builtins), code }));
 cpSync(join(root, 'CHANGELOG.md'), join(out, 'CHANGELOG.md'));
 cpSync(join(root, 'LICENSE'), join(out, 'LICENSE'));
 cpSync(join(root, 'scripts/bundle/check.mjs'), join(out, 'check.mjs'));
 
-const page = (title, script) =>
-  `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <link rel="icon" href="data:," />
-    <title>${title}</title>
-    <style>html, body { margin: 0; height: 100%; background: #0d0b14; } #app { position: fixed; inset: 0; }</style>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="./${script}"></script>
-  </body>
-</html>
-`;
 const blocks = guideBlocks(guide);
 const quick = blocks.find((b) => b.name === 'quickstart');
 if (!quick) throw new Error('bundle: docs/GUIDE.md has no ```js quickstart block');
 writeFileSync(join(out, 'game.js'), quick.code);
-writeFileSync(join(out, 'index.html'), page('Pixel Engine game', 'game.js'));
+writeFileSync(join(out, 'index.html'), examplePage({ title: 'Pixel Engine game', script: 'game.js' }));
 // examples/<name>.js for the guides' other blocks; a page for each that starts the engine (a
 // game), none for a module a game imports (ASSETS.md's models)
 const scripts = [...blocks.filter((b) => b.name !== 'quickstart'), ...guideBlocks(controlsGuide), ...guideBlocks(recipesGuide), ...guideBlocks(assetsGuide)];
@@ -193,7 +188,11 @@ if (new Set(names).size !== names.length) throw new Error(`bundle: two guide blo
 const examples = scripts.filter((b) => startsEngine(b.code));
 if (scripts.length) mkdirSync(join(out, 'examples'));
 for (const b of scripts) writeFileSync(join(out, 'examples', `${b.name}.js`), b.code.replaceAll(`from './pixel-engine.js'`, `from '../pixel-engine.js'`));
-for (const b of examples) writeFileSync(join(out, 'examples', `${b.name}.html`), page(`Pixel Engine: ${b.name}`, `${b.name}.js`));
+// a game whose guide gives its head (an `html <name>` fence: Gem Rush's 52in1 tags) gets it, after
+// 52in1's session client (scripts/hub/session.js, unmodified: https://52in1.com/lib/hub/session.js)
+const heads = new Map([guide, controlsGuide, recipesGuide, assetsGuide].flatMap((g) => [...guideHeads(g)]));
+for (const name of heads.keys()) if (!examples.some((b) => b.name === name)) throw new Error(`bundle: an \`html ${name}\` head but no game ${name}`);
+for (const b of examples) writeFileSync(join(out, 'examples', `${b.name}.html`), examplePage({ title: `Pixel Engine: ${b.name}`, script: `${b.name}.js`, head: heads.get(b.name), client: SESSION_CLIENT }));
 
 // 4. README (the kit's front door) and manifest.json.
 const files = () => {

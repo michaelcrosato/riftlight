@@ -22,8 +22,8 @@ free for the game's pause, and R2 / RT, R3 and the touchpad for the game's own (
 | V / B · Create (View) / L3 | **wave** / **sit** (sits down; B, Space or the stick stands up again) |
 
 **Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
-joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·
-**X** lie down; drag on the game to orbit/look, pinch to zoom (a pinch presses nothing: a second
+joystick bottom-left, buttons named by their moves (a pad's letters differ): **JUMP** · **HIT** ·
+**DUCK** · **GRAB** · **PRONE** · **LIE** (down); drag on the game to orbit/look, pinch to zoom (a pinch presses nothing: a second
 finger on the canvas lets `Touch` go until every finger is up, and two landing in one frame
 press it not at all); ⚙ the settings; with the hotkeys
 on (`?debug=1`) a top bar: ⓘ debug panel, **P** Pixel/Raw, **R** resolution, **◐** cycle looks,

@@ -6,9 +6,9 @@
 // itself and reports once in a LocalHub round); the names and codes its prose and its unnamed code
 // give are the engine's (dotted ones walked on a live engine and session, `Game.<x>` one of the
 // Game hooks; a bare option or field, `touchDensity: 2`, `micLater`, read from the engine's
-// source: EngineOptions and its camera config, the touch controls, the 52in1 settings); a page
-// holding its head tags passes 52in1's catalogue checker on them, and they name the game's
-// moments; it stays within its token budget; every text its games draw lies inside the HUD, clear
+// source: EngineOptions and its camera config, the touch controls, the 52in1 settings); the page
+// the kit writes for Gem Rush (52in1's session client, then its head tags) passes 52in1's
+// catalogue checker on them, and they name the game's moments; it stays within its token budget; every text its games draw lies inside the HUD, clear
 // of the others and in whole words, what a player needs is in view at every window shape, and the
 // player's wheel and + / - zoom both. The bundle e2e suite then plays its pages with check.mjs, on
 // a phone too (the touch buttons each game passes, a HUD clear of the controls).
@@ -19,9 +19,10 @@ import { fileURLToPath } from 'node:url';
 import * as THREE from 'three/webgpu';
 import ts from 'typescript';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { guideBlocks, startsEngine } from '../scripts/bundle/guide.mjs';
+import { examplePage, guideBlocks, guideHeads, startsEngine } from '../scripts/bundle/guide.mjs';
 import { settle } from './engine/node';
 import { checkPage, DUALSENSE, LOCAL, MODES, opensWithKeys, readMoments, readMultiplayer, TAGS } from '../scripts/hub/catalogue-check.mjs';
+import { readHead } from '../scripts/hub/head.mjs';
 import * as bundle from './bundle';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -421,6 +422,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
       run.hub.start();
       run.hub.advance(3000);
       run.step(200);
+      expect(run.hub.progress.get(0), 'on the hub\'s scoreboard from the start, before a gem (52in1 asks every copy for its progress)').toMatchObject({ score: 0 });
       solo!.game.at.copy(solo!.game.gems[0]!.position);
       run.step(1);
       run.hub.advance(1000);
@@ -601,16 +603,18 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(out).toEqual([]);
   });
 
-  it('a page with its head tags passes 52in1’s catalogue checker on them, and they name Gem Rush’s moments', async () => {
-    const head = guide.match(/^```html\n([\s\S]*?)^```$/m)![1]!;
+  it('Gem Rush’s page, as the kit ships it, carries the session client and its head tags; they pass 52in1’s catalogue checker and name its moments', async () => {
+    const head = guideHeads(guide).get('gem-rush')!;
+    expect(head, 'an `html gem-rush` fence').toBeTruthy();
     const tags = [...head.matchAll(/^<meta name="([\w:-]+)" content="([^"]*)">$/gm)].map((m) => [m[1]!, m[2]!] as const);
     expect(tags.length).toBe(head.trim().split('\n').length); // every line is a tag that reads
     const all = (name: string) => tags.filter(([k]) => k === name).map(([, v]) => v);
     const one = (name: string) => all(name)[0] ?? '';
-    // a kit game's page (a folder: the engine, in pixel-engine.js, reads window.AIHubSettings), the
-    // tags where the guide puts them: after <meta charset> and the session client, its first script
-    const page = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<script>${read('scripts/hub/session.js')}</script>\n${head}<title>Gem Rush</title>\n</head>\n<body><script type="module" src="game.js"></script></body>\n</html>\n`;
-    const { problems, fields } = checkPage(page, { folder: { files: new Set(['index.html', 'game.js', 'pixel-engine.js']) } });
+    // the page the kit ships (scripts/bundle.mjs: a folder, the engine in pixel-engine.js reads
+    // window.AIHubSettings): the session client byte for byte its first script, after <meta charset>, then the tags
+    const page = examplePage({ title: 'Gem Rush', script: 'gem-rush.js', head, client: read('scripts/hub/session.js') });
+    expect(page.indexOf(`<script>${read('scripts/hub/session.js')}</script>`), 'the client, unmodified, right after <meta charset>').toBe(page.indexOf('<meta charset="utf-8" />') + '<meta charset="utf-8" />'.length + 5);
+    const { problems, fields } = checkPage(page, { folder: { files: new Set(['gem-rush.html', 'gem-rush.js', '../pixel-engine.js']) } });
     expect([fields.session, fields.sessionMode, fields.sessionPlayers, typeof fields.client]).toEqual(['1', 'parallel', '1-4', 'string']);
     // every problem about the guide's tags, the ones it names or where they sit (the rest, hub:model,
     // the title..., is each game's own)
@@ -624,8 +628,8 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     const { moments } = readMoments(all('hub:moment'));
     const { MOMENTS } = await load('gem-rush');
     expect(Object.fromEntries(moments.map((m) => [m.id, m.seconds]))).toEqual(Object.fromEntries(Object.entries(MOMENTS as Record<string, { seconds: number }>).map(([id, m]) => [id, m.seconds])));
-    // what the game joins with, read from these tags as a page would
-    expect(bundle.headSession((name) => one(name) || null)).toEqual({ modes: ['parallel', 'moments'], seats: [1, 4] });
+    // what the game joins with, read from its page's tags as the page does
+    expect(bundle.headSession((name) => readHead(page).one(name) ?? null)).toEqual({ modes: ['parallel', 'moments'], seats: [1, 4] });
   });
 
   it('stays within its token budget (~4 characters a token)', () => {

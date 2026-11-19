@@ -4,14 +4,18 @@
 // bottom clear of the stick and the buttons and of the exhibits' plaques; the inspect card short
 // enough that the exhibit shows above it (or beside it), inside the screen; photo mode's panel
 // inside the screen with its title clear of the ≡ and its rows, the hints and the controls apart.
+// The empty Hall's title and hint wrapped to the screen, in English and the language whose title is
+// widest.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Vector3 } from 'three/webgpu';
-import { type HeadlessView, hudPlace } from '../../engine';
+import { type HeadlessView, hudPlace, Lang } from '../../engine';
 import { RIFTLIGHT_TOUCH_BUTTONS, touchLayout } from '../game/touch';
 import { type HeadlessRiftlight, headlessRiftlight } from '../headless';
 import { miniCovers, miniWidth, UiCanvas } from '../ui/kit';
-import { t } from '../lang';
+import { installLanguage, riftlightLines, t } from '../lang';
+import { riftlightTranslations } from '../lang/translations';
 import type { Box } from '../ui/layout';
+import { showcaseOf } from './save';
 
 const T = 90_000;
 let h: HeadlessRiftlight;
@@ -129,6 +133,51 @@ describe('the Hall of Beasts and photo mode on a phone held either way', () => {
         } finally {
           rl.bestiary.close();
         }
+      }
+      expect(out).toEqual([]);
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'the empty Hall\'s title and hint wrap to the screen held either way, apart and clear of the controls, in English and the language whose title is widest',
+    async () => {
+      const { rl, game, engine } = h;
+      const translations = riftlightTranslations();
+      const title = (code: string) => (code === 'en' ? riftlightLines().lines : translations[code]!.lines)['showcase.bestiary.empty'] as string;
+      const widest = Object.keys(translations).sort((a, b) => engine.hud.measure(title(b)).width - engine.hud.measure(title(a)).width)[0]!;
+      const shelf = showcaseOf(game.save).bestiary;
+      const kept = shelf.splice(0); // nothing slain yet: the pedestals are empty
+      const out: string[] = [];
+      try {
+        for (const code of ['en', widest]) {
+          installLanguage(new Lang(riftlightLines(), translations, { code }));
+          for (const viewport of PHONES) {
+            (engine.renderer as HeadlessView).setViewport(viewport);
+            await rl.bestiary.open();
+            try {
+              engine.input.noteTouch();
+              engine.step(5);
+              expect(game.showcase.bestiary.entries, 'an empty Hall').toEqual([]);
+              const drawn = texts();
+              const at = `the empty Hall in ${code}`;
+              out.push(...amiss(at, drawn, controls()));
+              // the title's and the hint's rows, whole words of them, none over another
+              const words = (id: string) => t(id).split(/\s+/);
+              const rows = (id: string) => drawn.filter((b) => b.what.split(/\s+/).every((w) => words(id).includes(w)));
+              const lines = [...rows('showcase.bestiary.empty'), ...rows('showcase.bestiary.empty_hint')];
+              expect(rows('showcase.bestiary.empty').map((b) => b.what).join(' '), `${at}: the title, whole`).toBe(t('showcase.bestiary.empty'));
+              expect(rows('showcase.bestiary.empty_hint').map((b) => b.what).join(' '), `${at}: the hint, whole`).toBe(t('showcase.bestiary.empty_hint'));
+              for (const a of lines) for (const b of lines) if (a !== b && overlaps(a, b)) out.push(`${at} at ${engine.hud.width}x${engine.hud.height}: ${a.what} over ${b.what}`);
+            } finally {
+              rl.bestiary.close();
+            }
+          }
+        }
+      } finally {
+        shelf.push(...kept);
+        installLanguage(new Lang(riftlightLines()));
       }
       expect(out).toEqual([]);
       expect(engine.errors).toEqual([]);

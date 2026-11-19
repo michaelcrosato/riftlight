@@ -5,7 +5,8 @@
 //   files     README, GUIDE, CONTROLS, RECIPES, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine
 //             with its types, the starter game, one page per named game block of docs/GUIDE.md,
 //             docs/GUIDE-CONTROLS.md, docs/GUIDE-RECIPES.md and docs/GUIDE-ASSETS.md (its models
-//             module beside them, with no page), check.mjs;
+//             module beside them, with no page; Gem Rush's with 52in1's session client and its head
+//             tags), check.mjs;
 //             manifest.json lists every file with its size; the kit says where newer versions are
 //             (manifest.json's latest, releases and source, README.md's build line, all from
 //             package.json's repository); the zip holds them all; the repository README's download
@@ -29,7 +30,8 @@
 //             target reachable, a phone held sideways at two CSS pixels a pixel at least;
 //             phone-*.png and tv-*.png show each state as the player sees it. Gem
 //             Rush's own page in a LocalHub round (window.AIHub): it joins from its head, no ⚙,
-//             and neither Esc nor Options pauses the round.
+//             and neither Esc nor Options pauses the round; the page as shipped (52in1's session
+//             client first, then its tags) passes 52in1's own session harness in a parallel round.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
 //             in arrays and objects too; ids from outside the kit), and fails, naming the problem,
 //             on a broken def, a module with no defs or one that never loads, an unknown id.
@@ -49,6 +51,8 @@ import { tmpdir } from 'node:os';
 import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
+import { harness, HARNESS_FILES } from './e2e-hub.mjs';
+import { readHead, SESSION_CLIENT } from './hub/head.mjs';
 
 /** The zip's entries (name and inflated bytes), read through its central directory. */
 function unzip(buf) {
@@ -140,6 +144,17 @@ export async function runBundle(h) {
     );
     const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
     check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
+    // Gem Rush's page as handed out joins a 52in1 round: the hub's client, byte for byte, its first
+    // script right after <meta charset>, then its tags (hub:session 1, its modes and moments); no
+    // other page carries the client
+    const pages = Object.fromEntries(await Promise.all(manifest.examples.map(async (p) => [p, await readFile(new URL(p, kit), 'utf8')])));
+    const gem = readHead(pages['examples/gem-rush.html'] ?? '');
+    check(
+      (pages['examples/gem-rush.html'] ?? '').includes(`<meta charset="utf-8" />\n    <script>${SESSION_CLIENT}</script>\n    <meta name="hub:`) &&
+        gem.one('hub:session') === '1' && gem.one('hub:multiplayer') === 'parallel 1-4, moments 1-4' && gem.all('hub:moment').length === 3 &&
+        Object.entries(pages).every(([p, html]) => p === 'examples/gem-rush.html' || !html.includes('aihub-session')),
+      `examples/gem-rush.html carries 52in1's session client (unmodified, its first script) and its head tags (hub:session ${gem.one('hub:session')}, ${gem.all('hub:moment').length} moments); no other page has the client`,
+    );
     // LIBRARY.md: a row per model and texture (variants share one), the library's by family, then each pack's.
     // CREDITS.md: every one of them either our own work (counted) or imported (listed by id under
     // its source), the palettes, the code's licences. library.json: the same assets as data.
@@ -1039,7 +1054,8 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
   await mkdir(new URL('examples/', roundDir), { recursive: true });
   await symlink(join(kitPath, 'pixel-engine.js'), fileURLToPath(new URL('pixel-engine.js', roundDir)));
   await symlink(join(kitPath, 'examples/gem-rush.js'), fileURLToPath(new URL('examples/gem-rush.js', roundDir)));
-  const tags = (await readFile(new URL('docs/GUIDE-CONTROLS.md', root), 'utf8')).match(/^```html\n([\s\S]*?)^```$/m)?.[1] ?? '';
+  // its tags as the kit's page has them
+  const tags = [...(await readFile(new URL('examples/gem-rush.html', kit), 'utf8')).matchAll(/^ *<meta name="hub:[^>]*>$/gm)].map((m) => m[0].trim()).join('\n');
   await writeFile(
     new URL('examples/round.html', roundDir),
     `<!doctype html><html><head><meta charset="utf-8">${tags}<link rel="icon" href="data:,"><style>html, body { margin: 0; height: 100%; } #app { position: fixed; inset: 0; }</style></head><body><div id="app"></div>
@@ -1094,6 +1110,28 @@ await import('./gem-rush.js');
     }
   } finally {
     roundServer.close();
+  }
+
+  // Gem Rush's page as the kit hands it out in 52in1's own session harness (scripts/hub/harness/,
+  // vendored unmodified), as 52in1 checks a game joining its library: a parallel round of two, cut
+  // short by the hub's clock (each copy reports its score at time-up)
+  const harnessDir = new URL('harness/', out);
+  await mkdir(new URL('examples/', harnessDir), { recursive: true });
+  for (const f of HARNESS_FILES) await symlink(fileURLToPath(new URL(`scripts/hub/harness/${f}`, root)), fileURLToPath(new URL(f, harnessDir)));
+  await symlink(join(kitPath, 'pixel-engine.js'), fileURLToPath(new URL('pixel-engine.js', harnessDir)));
+  for (const f of ['gem-rush.html', 'gem-rush.js']) await symlink(join(kitPath, 'examples', f), fileURLToPath(new URL(`examples/${f}`, harnessDir)));
+  const harnessServer = await serve(fileURLToPath(harnessDir));
+  let hub;
+  try {
+    hub = await launch(exe, s);
+    const q = 'mode=parallel&players=2&limit=12';
+    const r = await harness(hub.browser, `http://127.0.0.1:${harnessServer.address().port}/harness.html?game=examples/gem-rush.html&${q}&auto=1`);
+    check(r.pass, `Gem Rush's page in 52in1's session harness (${q}): ${r.error ? `the harness ran (${r.error})` : `the hub's checks pass (${r.checks})${r.bad.length ? '\n    ' + r.bad.join('\n    ') : ''}`}`);
+  } catch (e) {
+    check(false, `Gem Rush in 52in1's session harness crashed: ${e.message}`);
+  } finally {
+    await hub?.browser.close();
+    harnessServer.close();
   }
 
   await play(
