@@ -49,6 +49,10 @@ const shout = () => {
 };
 const barSlot = (g: Riftlight = h.game) => g.hero.skills().findIndex((s) => typeof s.slot === 'number' && s.id === SHOUT_SKILL);
 const warCry = (g: Riftlight = h.game) => g.hero.skills().find((s) => s.id === SHOUT_SKILL);
+/** The real hero's actor (the port's `ActorLike` holds less): its buffs and mana. */
+const hero = (g: Riftlight = h.game) => g.hero.actor as unknown as { hasBuff(key: string): boolean; mana: number; maxMana: number };
+/** War Cry's buff is on the hero: it was cast. */
+const cried = (g: Riftlight = h.game) => hero(g).hasBuff(SHOUT_SKILL);
 
 beforeAll(async () => {
   h = await headlessRiftlight({ seed: 717, options: { hubSettings: hub as HubSettingsSource } });
@@ -113,9 +117,9 @@ describe('a shout uses War Cry', () => {
       const skills = watch(game);
       shout();
       expect(skills.filter((s) => s >= 0), 'one shout: War Cry, once').toEqual([slot]);
-      expect([game.hero.actor.hasBuff(SHOUT_SKILL), warCry()!.remaining > 0], 'cast: its buff, its cooldown').toEqual([true, true]);
+      expect([cried(), warCry()!.remaining > 0], 'cast: its buff, its cooldown').toEqual([true, true]);
       // its button does the same
-      game.hero.actor.mana = game.hero.actor.maxMana;
+      hero().mana = hero().maxMana;
       engine.step(60 * 7); // the cooldown over
       skills.length = 0;
       engine.input.setKey(KEYS.skill[slot]![0]!, true);
@@ -170,7 +174,7 @@ describe('a shout uses War Cry', () => {
       const skills = watch(game);
       heard.reads = 0;
       shout();
-      expect([skills.filter((s) => s >= 0), heard.reads, game.hero.actor.hasBuff(SHOUT_SKILL)]).toEqual([[], 0, false]);
+      expect([skills.filter((s) => s >= 0), heard.reads, cried()]).toEqual([[], 0, false]);
       // a shout's press anyway (a recording's): nothing
       engine.input.setKey(VOICE_KEYS.shout, true);
       engine.step(1);
@@ -214,7 +218,7 @@ describe('a shout uses War Cry', () => {
       expect(replayed).toEqual(live);
       expect(engine.fingerprint()).toBe(fingerprint);
       expect(heard.reads, 'the microphone, never read in the replay').toBe(0);
-      expect([again.hero.actor.hasBuff(SHOUT_SKILL), warCry(again)!.remaining > 0]).toEqual([true, true]);
+      expect([cried(again), warCry(again)!.remaining > 0]).toEqual([true, true]);
       expect(engine.errors).toEqual([]);
     },
     T,
