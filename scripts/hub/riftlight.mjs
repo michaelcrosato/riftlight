@@ -7,6 +7,8 @@
  * how (a shared world's, or one device's), and how many. The online four are a session's: one page
  * offers them all and the hub picks one each round. Couch co-op (`same-screen`, game/coop.ts) is the
  * game's own, offered from its pause menu, a pad for each player but the first: never a session's.
+ * Not built, by the game's kind (docs/game/hub.md *What the head says*): split-screen, hot-seat,
+ * same-screen versus and a shared world's `other`.
  */
 export const MULTIPLAYER = [
   { where: 'shared-world', how: 'co-op', players: '1-4' },
