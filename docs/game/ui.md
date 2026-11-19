@@ -210,7 +210,7 @@ under the row); a tooltip taller than the screen (a rare's on a 360×800 or a 74
 what fits with a scroll bar at its edge, and a finger's drag on it scrolls it to its last lines
 (the comparison with the gear: `tipScroll`, no tap where the drag ends nor a long-press while it
 rests there). A second tap and a long-press still work. A 740×360 phone held sideways has 180
-rows, fewer than the inventory's 182: there its gaps close up (`INV_SHORT_H`, 172 rows). **Assists**
+rows, fewer than the inventory's 182: there its gaps close up (`INV_SHORT_H`, 172 rows; 168 at 170 rows). **Assists**
 (`Riftlight.touchAssist`, a finger on a page with touch controls only: the recorded `input.device`
 and density, each a setting shown on such a page, where it applies, and on by default, kept by
 recordings as play settings; a touch on a desktop's page, a touchscreen laptop's, gets none): auto attack (`touchAutoAttack`: the basic attack on the

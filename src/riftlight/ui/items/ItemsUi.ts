@@ -76,6 +76,12 @@ const BAG_Y = 108;
  */
 const INV_SHORT_H = 172;
 const SHORT_BAG_Y = 104;
+/**
+ * The short inventory on a screen too short for it still (a phone held sideways under a browser's
+ * bar, 340 CSS px: 170 rows): the gold's row closes up to 2 rows under the bag, at most this short,
+ * and the windows sit a row from the top.
+ */
+const INV_TIGHT_H = 168;
 const INV_COMPACT_H = 84;
 const STASH_H = 156;
 const VENDOR_H = 148;
@@ -350,7 +356,7 @@ export class ItemsUi {
     return !this.narrow && this.ctx.engine.renderer.touchDensity === 0;
   }
 
-  /** A wide screen too short for the whole inventory (a phone held sideways, 180 rows): its gaps close up (`INV_SHORT_H`). */
+  /** A wide screen too short for the whole inventory (a phone held sideways, 180 rows): its gaps close up (`INV_SHORT_H`; `INV_TIGHT_H` shorter still). */
   private short(): boolean {
     return !this.narrow && this.size.h < INV_H + 4;
   }
@@ -539,14 +545,14 @@ export class ItemsUi {
   /** Inventory panel rect (art pixels). */
   rightRect(): Rect {
     const w = this.panelW();
-    const h = this.compact() ? INV_COMPACT_H : this.short() ? INV_SHORT_H : INV_H;
+    const h = this.compact() ? INV_COMPACT_H : this.short() ? Math.max(INV_TIGHT_H, Math.min(INV_SHORT_H, this.size.h - 2)) : INV_H;
     if (this.narrow) {
       const x = Math.floor((this.size.w - w) / 2);
       if (!this.left) return { x, y: Math.max(1, Math.floor((this.size.h - h) / 2)), w, h };
       const total = this.leftH() + 3 + h;
       return { x, y: Math.max(1, Math.floor((this.size.h - total) / 2)) + this.leftH() + 3, w, h };
     }
-    return { x: Math.max(0, this.size.w - w - 4), y: Math.max(2, Math.floor((this.size.h - h) / 2)), w, h };
+    return { x: Math.max(0, this.size.w - w - 4), y: Math.max(h < INV_SHORT_H ? 1 : 2, Math.floor((this.size.h - h) / 2)), w, h };
   }
 
   leftRect(): Rect {
