@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.78.0
+
+- **Kit: 52in1's session client is MIT.** The client that `examples/gem-rush.html` carries (aihub-session) is licensed by the `LICENSE` beside it in 52in1's `lib/hub/`, and the kit's CREDITS.md now names it MIT with the licence text, where it said "no licence declared".
+
 ## 0.77.0
 
 - **A phone held sideways keeps at least 170 art rows at `touchDensity: 2`** (`touchRows(cssPerArt)`, `TOUCH_ROWS_SIDE`: the rows a 340 CSS px side has, 170 at 2, 113 at 3; new exports). Where the nearest whole number of device pixels would leave its short side fewer, `touchScale` takes the largest whole number that keeps them:
