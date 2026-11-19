@@ -63,7 +63,14 @@ describe('glyphs', () => {
   it('Xbox’s are its lettered buttons; shoulders, triggers and menus are caps with their names; keys are caps; the mouse is drawn', () => {
     const a = sprite(padGlyph('PadA', 'xbox'))!;
     expect([a.colors.f, a.colors.l]).toEqual(['green', 'white']);
-    expect(sprite(padGlyph('PadY', 'xbox'))!.colors.f).toBe('sand');
+    // every letter bright on its darker disc, Y too (a dark Y on a bright disc read as a 'W' at ten feet)
+    const xbox = (['PadA', 'PadB', 'PadX', 'PadY'] as const).map((c) => sprite(padGlyph(c, 'xbox'))!.colors);
+    expect(xbox.map((c) => [c.f, c.l])).toEqual([
+      ['green', 'white'],
+      ['red', 'white'],
+      ['blue', 'white'],
+      ['orange', 'white'],
+    ]);
     expect(padGlyph('PadLB')).toEqual({ kind: 'cap', text: 'L1', round: true });
     expect(padGlyph('PadStart', 'xbox')).toEqual({ kind: 'cap', text: 'Menu', round: true });
     expect(keyGlyph('Space')).toEqual({ kind: 'cap', text: 'Spc', round: false });
