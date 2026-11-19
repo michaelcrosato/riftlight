@@ -459,10 +459,10 @@ async function busySeen(browser, dir, port) {
   return { pass, detail: `${r ? `ended in ${(took / 1000).toFixed(1)} s (${r.error})` : `still running after ${(took / 1000).toFixed(0)} s`}; its evidence: ${json ? `stuck ${json.stuck}, paused at ${top ?? 'nothing'}, browser log ${json.browserLog === null ? 'none' : 'kept'}` : 'none'}` };
 }
 
-/** The harness page `url` ends with, once `browser` has opened it (null after 10 s). */
-async function openedPage(browser, url) {
+/** The harness page `url` ends with, once `browser` has opened it (null after `ms`). */
+async function openedPage(browser, url, ms = 10_000) {
   const from = Date.now();
-  while (Date.now() - from < 10_000) {
+  while (Date.now() - from < ms) {
     const page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith(url));
     if (page) return page;
     await new Promise((r) => setTimeout(r, 100));
@@ -480,9 +480,9 @@ async function deadBrowserSeen(browsers, dir, port) {
   const dead = await browsers.get();
   const evidence = fileURLToPath(new URL('checks/dead', dir)); // not in evidence/: CI keeps that for runs that failed
   await rm(`${evidence}.json`, { force: true });
-  const from = Date.now();
   const run = harness(dead, `http://localhost:${port}/stuck.html`, { timeout: 30_000, evidence });
-  const opened = !!(await openedPage(dead, '/stuck.html'));
+  const opened = !!(await openedPage(dead, '/stuck.html', 30_000)); // a slow machine (CI) may take a while to open it
+  const from = Date.now(); // timed from the browser's death, not the page's load
   await dead.close();
   const r = await run;
   const took = Date.now() - from;
@@ -490,7 +490,7 @@ async function deadBrowserSeen(browsers, dir, port) {
   const next = await browsers.get();
   const renewed = next !== dead && next.isConnected();
   const exit = Array.isArray(json?.browserLog) ? json.browserLog.find((l) => EXITED.test(l)) : null;
-  const pass = opened && r.pass === false && /closed/.test(r.error ?? '') && took < 25_000 && json?.closed === true && json?.stuck === false && !!exit && renewed;
+  const pass = opened && r.pass === false && /closed/.test(r.error ?? '') && took < 15_000 && json?.closed === true && json?.stuck === false && !!exit && renewed;
   return { pass, detail: `the run: ${r.error ?? 'passed'}, ended in ${(took / 1000).toFixed(1)} s; its evidence: ${json ? `closed ${json.closed}, stuck ${json.stuck}, its browser's log: ${exit ?? (json.browserLog ? 'no exit in it' : 'none')}` : 'none'}; the next: ${renewed ? 'a new browser' : 'no new browser'}` };
 }
 
@@ -499,12 +499,14 @@ async function deadBrowserSeen(browsers, dir, port) {
  * finishes, crashed through the debugger (`Page.crash`, as earlyoom's kill or an out-of-memory would).
  */
 async function crashSeen(browser, port) {
-  const from = Date.now();
   const run = harness(browser, `http://localhost:${port}/stuck.html`, { timeout: 30_000 });
-  const page = await openedPage(browser, '/stuck.html');
+  const page = await openedPage(browser, '/stuck.html', 30_000); // a slow machine (CI) may take a while to open it
+  const at = Date.now(); // timed from the crash: how long the page took to open is the machine's
   if (page) (await page.context().newCDPSession(page)).send('Page.crash').catch(() => {}); // it answers nothing: it is gone
   const r = await run;
-  return !!page && r.crashed === true && r.error === CRASHED && Date.now() - from < 15_000;
+  const took = Date.now() - at;
+  const pass = !!page && r.crashed === true && r.error === CRASHED && took < 10_000;
+  return { pass, detail: page ? `ended ${(took / 1000).toFixed(1)} s after the crash: ${r.crashed ? 'a crash' : 'not called a crash'} (${r.error ?? 'passed'})` : 'the page never opened' };
 }
 
 /**
@@ -518,7 +520,8 @@ export async function harnessChecks(browsers, dir, port, check) {
   check(busy.pass, `a harness page whose thread is stuck ends its run at its timeout, timed in Node (Playwright's waits never time out on it), and its evidence says where it is stuck: ${busy.detail}`);
   const dead = await deadBrowserSeen(browsers, dir, port);
   check(dead.pass, `a harness browser that dies in a run fails only that run (an error, not a crash of the tool), its evidence says the page is gone (not stuck) and how its browser's process ended, and the next run has a new browser: ${dead.detail}`);
-  check(await crashSeen(await browsers.get(), port), 'a harness page whose renderer dies ends its run at once, as a crash (Playwright never notices one: it would sit out its timeout)');
+  const crash = await crashSeen(await browsers.get(), port);
+  check(crash.pass, `a harness page whose renderer dies ends its run at once, as a crash (Playwright never notices one: it would sit out its timeout): ${crash.detail}`);
 }
 
 /** Where the `hub` suite's runs that fail leave their evidence (CI keeps it: ci.yml's e2e job). */
