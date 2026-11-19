@@ -2,12 +2,12 @@
 // touch button that does each of Riftlight's actions (`CONTROLS`) on the device in use, PlayStation's
 // buttons by default and Xbox's when the player chooses them, and names that are words are lines.
 import { afterEach, describe, expect, it } from 'vitest';
-import { type ControlTable, keyCap as engineKeyCap, keyName, Lang, type LineSource, padName as enginePadName, PAD_GLYPHS, touchName } from '../../engine';
+import { type ControlTable, keyCap as engineKeyCap, keyName, Lang, type LineSource, padName as enginePadName, PAD_GLYPHS, touchName, VOICE_KEYS } from '../../engine';
 import { LAB_CONTROLS, LAB_KEYS } from '../levels/levelLab';
 import { installLanguage, lang, riftlightLines, t } from '../lang';
 import { ARCADE_AGAIN, ARCADE_KEYS } from '../showcase/arcade/ArcadeStage';
 import { SHOWCASE_CONTROLS } from '../showcase/hints';
-import { CONTROLS, controlLabel, KEYS, keyCap, MENU_BINDINGS, MOUSE, padName, SHELL_MENU_BINDINGS } from './controls';
+import { CONTROLS, controlLabel, KEYS, keyCap, MENU_BINDINGS, MOUSE, padName, SHELL_MENU_BINDINGS, SHOUT_SKILL } from './controls';
 import { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES } from './touch';
 import { SHOWCASE } from '../lang/showcase';
 
@@ -137,5 +137,22 @@ describe('control labels', () => {
       }
     }
     expect([...offenders]).toEqual([]);
+  });
+});
+
+describe('fully playable on any controller', () => {
+  it('every DualSense-only input (a touchpad swipe or press, a shout) has a standard pad button that does the same', () => {
+    /** Only a DualSense through 52in1 sends it: its touchpad's gestures and press, a shout into its microphone. */
+    const dualSenseOnly = (c: string) => c.startsWith('PadTouchpad') || c === VOICE_KEYS.shout;
+    /** Every standard-mapping pad has it. */
+    const standard = (c: string) => c.startsWith('Pad') && !dualSenseOnly(c);
+    const bindings = Object.entries(KEYS).map(([name, codes]) => [name, (codes as readonly unknown[]).flat() as string[]] as const);
+    const used = bindings.filter(([, codes]) => codes.some(dualSenseOnly)).map(([name]) => name);
+    expect(used, 'the DualSense-only inputs it binds').toEqual(expect.arrayContaining(['map', 'pagePrev', 'pageNext', 'shout']));
+    const alone = bindings.filter(([name, codes]) => name !== 'shout' && codes.some(dualSenseOnly) && !codes.some(standard)).map(([name]) => name);
+    expect(alone, 'a DualSense-only input with no standard pad button beside it').toEqual([]);
+    // a shout uses War Cry from the skill bar, as its slot's button does: every slot has a pad button
+    expect(SHOUT_SKILL).toBe('war-cry');
+    expect(KEYS.skill.map((slot) => slot.some(standard)), 'every bar slot on a standard pad').toEqual([true, true, true, true]);
   });
 });
