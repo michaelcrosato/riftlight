@@ -127,6 +127,7 @@ export {
   type AudioBus,
   type AudioLevels,
   AudioManager,
+  audioStorageKey,
   attenuation,
   muffleCutoff,
   PLAYGROUND_SONG,

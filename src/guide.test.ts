@@ -80,6 +80,17 @@ describe('docs/GUIDE.md', () => {
     expect(listAfter('three built-in models (').filter((m) => m.endsWith('.glb')).sort()).toEqual(models.map((f) => `assets/${f}`).sort());
   });
 
+  it('the hero’s pad buttons are KEYMAP’s', () => {
+    const sentence = /On a pad \(`KEYMAP`[^)]*\):([^;]+);/.exec(section('The hero'))?.[1] ?? '';
+    // PlayStation's names (as `GAMEPAD_BUTTONS` gives them) and what each does, KEYMAP's action
+    const BUTTON = { Cross: 'PadA', Circle: 'PadB', Square: 'PadX', Triangle: 'PadY', L1: 'PadLB', R1: 'PadRB', L2: 'PadLT', Create: 'PadBack', L3: 'PadL3' } as const;
+    const ACTION: Record<string, keyof typeof bundle.KEYMAP> = { jumps: 'jump', crouches: 'crouch', attacks: 'attack', grabs: 'grab', prone: 'prone', 'lie down': 'lie', waves: 'wave', sits: 'sit', walks: 'walk' };
+    const said = [...sentence.matchAll(/\b(Cross|Circle|Square|Triangle|L1|R1|L2|Create|L3)\s+(jumps|crouches|attacks|grabs|prone|lie\s+down|waves|sits|walks)\b/g)].map((m) => [m[2]!.replace(/\s+/, ' '), BUTTON[m[1] as keyof typeof BUTTON]]);
+    const keymap = Object.entries(bundle.KEYMAP).map(([action, codes]) => [action, codes.find((c) => c.startsWith('Pad'))]);
+    expect(said.map(([verb, code]) => [ACTION[verb!], code]).sort()).toEqual(keymap.sort());
+    expect(sentence).toMatch(/left\s+stick or d-pad moves/);
+  });
+
   it('every URL flag it gives does something', () => {
     const flags = listAfter('URL flags (with `withUrlOptions` in `Engine.start`):').filter((f) => f.startsWith('?'));
     expect(flags.length).toBeGreaterThanOrEqual(10);

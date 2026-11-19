@@ -90,10 +90,12 @@ export async function runSystems(h) {
     await until(page, (e) => e.audio.muted && document.querySelector('[data-a="mute"]').textContent === 'Sound: off');
     const muted = await E(() => ({
       muted: window.__PIXEL_ENGINE__.audio.muted,
-      stored: localStorage.getItem('pixel-engine:audio'),
+      stored: localStorage.getItem('pixel-engine:audio:playground'),
+      shared: localStorage.getItem('pixel-engine:audio'),
       button: document.querySelector('[data-a="mute"]').textContent,
     }));
-    check(muted.muted && JSON.parse(muted.stored).muted === true && muted.button === 'Sound: off', `M mutes, persisted (${muted.stored}), panel shows "${muted.button}"`);
+    // saved under the game's own key (52in1's games share one origin), never the key all once shared
+    check(muted.muted && JSON.parse(muted.stored ?? 'null')?.muted === true && muted.shared === null && muted.button === 'Sound: off', `M mutes, persisted for this game (${muted.stored}; the shared key ${muted.shared}), panel shows "${muted.button}"`);
     await page.click('[data-a="mute"]');
     await until(page, (e) => !e.audio.muted);
     check(await E(() => !window.__PIXEL_ENGINE__.audio.muted), 'the panel button unmutes');

@@ -244,7 +244,7 @@ export async function runRiftlightReplay(h) {
       localStorage.setItem('riftlight:settings', JSON.stringify({ screenShake: 0, zoom: 1.4, damageNumbers: false, lootFilter: 2 }));
       const e = window.__PIXEL_ENGINE__;
       for (const [ch, v] of [['master', 0.2], ['sfx', 0.3], ['music', 0.4]]) e.audio.setVolume(ch, v);
-      return { slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio'), volume: { ...e.audio.volume } };
+      return { slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio:riftlight'), volume: { ...e.audio.volume } };
     });
     const again = await R(async (text) => {
       const e = window.__PIXEL_ENGINE__;
@@ -271,7 +271,7 @@ export async function runRiftlightReplay(h) {
       }
       const ms = performance.now() - t0; // real time: how long the replay took
       const same = {
-        writes, print: e.fingerprint(), end: window.__RIFTLIGHT__.state(), slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio'), volume: { ...e.audio.volume } };
+        writes, print: e.fingerprint(), end: window.__RIFTLIGHT__.state(), slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio:riftlight'), volume: { ...e.audio.volume } };
       // the pointer in a corner for a second of the fight: the same session must not match
       const edited = JSON.parse(text);
       const fight = edited.frames.findIndex((f, i) => i > edited.frames.length * 0.3 && f.held?.includes('MouseLeft'));

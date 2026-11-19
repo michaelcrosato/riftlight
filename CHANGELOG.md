@@ -8,6 +8,18 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.69.0
+
+- Each game keeps its own volumes. AudioManager saves mute and the master, music and effects volumes under `pixel-engine:audio:<settings key>`, beside `pixel-engine:settings:<key>` (`audioStorageKey`, exported). The key is passed as `new AudioManager(target, key)`; with no key, or `settings: { key: false }`, volumes last this session only. A game with none of its own takes the old shared `pixel-engine:audio` once and saves it as its own; the shared key is never written again. All 52in1 games share one storage, so muting one used to mute them all.
+- check.mjs `--keys` holds the sticks (`PadLStick:1,0*60`, `PadRStick:x,y`, y up) and the d-pad (`PadUp`, `PadDown`, `PadLeft`, `PadRight`) on its fake pad, which is plugged in a frame early so the device stays the pad.
+- check.mjs `Mouse@x,y` hovers and `MouseLeft@x,y` (`MouseRight`, `MouseMiddle`) clicks at art pixels. The mouse travels there over 4 frames so hover follows; a page uses the browser's own mouse.
+- check.mjs refuses with exit 2, naming it, any code it can't hold, including names every JavaScript object has, such as `toString` and `constructor`. report.json gives the `device` in use.
+- API.md cuts nothing: every doc comment whole, a member's later paragraphs and examples indented under its bullet (Engine.loadGame's unload contract, Hud.legend's example), and whole types, with no "... N more ...". KEYMAP's pad buttons, `voiceOn`, `motionOn` and `EngineOptions.settings` now read in full.
+- Gem Rush's page carries 52in1's whole catalogue head: title — tagline, description, theme-color, a data:image icon, hub:catalogue, hub:type, hub:genre, hub:model / hub:effort / hub:harness to fill in, and the game-lines block. It draws its words from those lines through `langFor`, and 52in1's checker now asks only for the model and covers.
+- A head fence's own `<title>` and icon replace the kit page's defaults.
+- CONTROLS.md's checklist names every tag the head needs and 52in1's shared-storage rule (keys under your game's prefix, never `clear()`, never `ai-hub:`).
+- GUIDE.md names the hero's pad buttons. It now holds the couch co-op input API (`padPlayers`, `joinWith`), why to call `input.release()` / `input.clearQueued()` as a menu opens and closes, the settings panel from a pause menu or `padButton`, the touch options with `rects()`, and a `LocalHub` round in Node (section 8).
+
 ## 0.68.0
 
 - **The engine's default touch buttons** (`DEFAULT_TOUCH_BUTTONS`, the platformer's) are named by their moves (JUMP, HIT, DUCK, GRAB, PRONE, LIE) instead of the letters A B C G Z X with hints, which contradicted a pad's buttons (touch B attacked while pad B crouches). In the default grid a label longer than four characters is drawn smaller (`long`) so it fits the button.

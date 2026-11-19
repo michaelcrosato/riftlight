@@ -15,9 +15,19 @@
 //   node check.mjs --headless game.js    play the game in Node, no browser: steps, errors, a replay
 //
 // Options:
-//   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames);
-//                                    a pad button's code (PadA, PadStart: CONTROLS.md) is held on a fake
-//                                    standard pad, so the device in use turns pad and the prompts follow
+//   --keys KeyD*60,Space*4,KeyW*30   hold each step for that many frames, in order (*90 alone: 90 frames
+//                                    holding nothing, the default). A step is a key's event.code (KeyD,
+//                                    Space, ArrowUp, Escape, ...), or on a fake standard pad (plugged in
+//                                    a frame before the first step, so the device in use turns pad and
+//                                    the prompts follow): a button (PadA, PadB, PadX, PadY, PadLB, PadRB,
+//                                    PadLT, PadRT, PadBack, PadStart, PadL3, PadR3, PadTouchpad), the
+//                                    d-pad (PadUp, PadDown, PadLeft, PadRight) or a stick held over
+//                                    (PadLStick:1,0 right, PadLStick:0,1 up, PadRStick:x,y; -1..1), or
+//                                    the mouse at a spot in art pixels (the HUD's x, y): Mouse@120,80
+//                                    moves there over 4 frames (hover), MouseLeft@120,80 (MouseRight,
+//                                    MouseMiddle) moves there and holds the button; MouseLeft alone,
+//                                    where it is. Anything else is refused (exit 2). report.json's
+//                                    `device` is the device in use at the end
 //   --cameras                        also shoot the iso, topdown, side and third camera presets
 //   --looks pixel_heroes,noir        also shoot these looks (names from engine.lookPresets)
 //   --out check                      folder for the PNGs and report.json (default: ./check)
@@ -88,16 +98,67 @@ const target = positional[0] ?? (headless ? 'game.js' : 'index.html');
 const out = resolve(opts.out ?? (sheets ? 'check/sheets' : 'check'));
 const [vw, vh] = String(opts.size ?? '960x540').split('x').map(Number);
 if (!(vw > 0 && vh > 0)) fail('--size is WIDTHxHEIGHT, e.g. 960x540');
-const keys = String(opts.keys ?? '*90')
-  .split(',')
-  .filter(Boolean)
-  .map((s) => {
-    const [code, n] = s.split('*');
-    if (code && !/^[A-Za-z][A-Za-z0-9]*$/.test(code)) fail(`--keys: "${code}" is not a key code (KeyD, Space, ArrowUp, Digit1, ...)`);
-    return { code: code || null, frames: Math.max(1, Number(n) || 1) };
-  });
 const looks = opts.looks ? String(opts.looks).split(',').filter(Boolean) : [];
 const cameras = opts.cameras === true;
+
+/** The keys a step may hold (KeyboardEvent.code), and the codes the engine presses itself (the mouse's, a finger's, swipes, a DualSense touchpad's gestures). */
+const KEY_CODES = new Set([
+  ...Array.from({ length: 26 }, (_, i) => `Key${String.fromCharCode(65 + i)}`),
+  ...Array.from({ length: 10 }, (_, i) => `Digit${i}`),
+  ...Array.from({ length: 10 }, (_, i) => `Numpad${i}`),
+  ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`),
+  ...['Up', 'Down', 'Left', 'Right'].map((d) => `Arrow${d}`),
+  ...['Add', 'Subtract', 'Multiply', 'Divide', 'Decimal', 'Enter', 'Equal', 'Comma'].map((k) => `Numpad${k}`),
+  ...['Shift', 'Control', 'Alt', 'Meta'].flatMap((k) => [`${k}Left`, `${k}Right`]),
+  ...'Space Enter Escape Tab Backspace Delete Insert Home End PageUp PageDown CapsLock NumLock ScrollLock PrintScreen Pause ContextMenu Backquote Minus Equal BracketLeft BracketRight Backslash IntlBackslash IntlRo IntlYen Semicolon Quote Comma Period Slash'.split(' '),
+  ...['MouseLeft', 'MouseRight', 'MouseMiddle', 'Touch', 'SwipeLeft', 'SwipeRight', 'SwipeUp', 'SwipeDown'],
+  ...['Left', 'Right', 'Up', 'Down', 'Tap'].map((g) => `PadTouchpad${g}`),
+]);
+/** The standard pad's buttons (the engine's GAMEPAD_BUTTONS codes), and its d-pad's by index (`Object.hasOwn`: `toString` is none). */
+const PAD_BUTTONS = new Set(['PadA', 'PadB', 'PadX', 'PadY', 'PadLB', 'PadRB', 'PadLT', 'PadRT', 'PadBack', 'PadStart', 'PadL3', 'PadR3', 'PadTouchpad']);
+const DPAD = { PadUp: 12, PadDown: 13, PadLeft: 14, PadRight: 15 };
+const STICKS = new Set(['PadLStick', 'PadRStick']);
+const POINTER = new Set(['Mouse', 'MouseLeft', 'MouseRight', 'MouseMiddle']);
+/** Frames the mouse takes to travel to a step's spot (hover follows a pointer that moves). */
+const TRAVEL = 4;
+
+/**
+ * --keys as steps: `{ kind, code, frames }`, with `stick` ([x, y], y up) or `at` ([x, y] in art
+ * pixels). Commas part the steps and a stick's or a spot's two numbers. Exits 2 on anything else.
+ */
+function parseKeys(text) {
+  const kinds = "a key's event.code (KeyD, Space, ArrowUp), a pad button (PadA ... PadTouchpad), the d-pad (PadUp, PadDown, PadLeft, PadRight), a stick (PadLStick:x,y, PadRStick:x,y) or the mouse (Mouse@x,y, MouseLeft@x,y)";
+  const num = String.raw`(-?(?:\d+\.?\d*|\.\d+))`;
+  const step = new RegExp(String.raw`\s*([A-Za-z][A-Za-z0-9]*)?(?::${num},${num}|@${num},${num})?(?:\*(\d+))?\s*(?:,|$)`, 'y');
+  const steps = [];
+  for (let at = 0; at < text.length; ) {
+    step.lastIndex = at;
+    const m = step.exec(text);
+    if (!m || step.lastIndex === at) fail(`--keys: can't read "${text.slice(at)}": steps are CODE*FRAMES, parted by commas (${kinds})`);
+    at = step.lastIndex;
+    const [whole, code = null, sx, sy, px, py, n] = m;
+    const said = whole.replace(/\s*,?\s*$/, '').trim();
+    if (!said) continue; // an empty step (",,")
+    const frames = Math.max(1, Number(n) || 1);
+    if (sx !== undefined) {
+      if (!STICKS.has(code)) fail(`--keys: "${said}": only a stick takes x,y after a colon (PadLStick:1,0)`);
+      const stick = [Number(sx), Number(sy)];
+      if (stick.some((v) => !(Math.abs(v) <= 1))) fail(`--keys: "${said}": a stick's x and y are each -1..1 (x right, y up)`);
+      steps.push({ kind: 'stick', code, stick, frames });
+    } else if (px !== undefined) {
+      if (!POINTER.has(code)) fail(`--keys: "${said}": only the mouse takes a spot after @ (Mouse@120,80, MouseLeft@120,80)`);
+      steps.push({ kind: 'pointer', code, at: [Number(px), Number(py)], frames });
+    } else if (code === null) steps.push({ kind: 'idle', code, frames });
+    else if (STICKS.has(code)) fail(`--keys: "${said}": say where the stick is held, ${code}:x,y (x right, y up, each -1..1: ${code}:1,0 is right)`);
+    else if (code === 'Mouse') fail(`--keys: "${said}": say where the mouse goes, Mouse@x,y in art pixels`);
+    else if (PAD_BUTTONS.has(code) || Object.hasOwn(DPAD, code)) steps.push({ kind: 'pad', code, frames });
+    else if (POINTER.has(code)) steps.push({ kind: 'pointer', code, at: null, frames });
+    else if (KEY_CODES.has(code)) steps.push({ kind: 'key', code, frames });
+    else fail(`--keys: "${code}" is not a code check.mjs can hold: ${kinds}`);
+  }
+  return steps.length ? steps : [{ kind: 'idle', code: null, frames: 90 }];
+}
+const keys = parseKeys(String(opts.keys ?? '*90'));
 
 const MIME = {
   '.html': 'text/html',
@@ -225,18 +286,53 @@ function engineDir(from) {
 }
 
 /**
- * Hold or let go of a --keys code: a pad button (`Pad*`, one `input.gamepadButtons` maps) on a fake
- * standard pad, which stays connected, so `input.device` turns pad as a player's would; anything
- * else as a key. In the page too (passed to it as source: it runs there).
+ * Hold or let go of a --keys step (`parseKeys`) on the engine `e`; null plugs the fake pad in, at
+ * rest. A pad button (the one `input.gamepadButtons` maps to its code), the d-pad and a stick are
+ * held on a fake standard pad, which stays connected (at rest between its steps), so
+ * `input.device` turns pad as a player's would; a key code is held as a key. The mouse's steps
+ * point here only headless (normalised device coordinates from art pixels); a page's are the
+ * browser's own mouse. In the page too (passed to it as source: it runs there). Throws
+ * `check.mjs: ...` for a step the game can't take (a pad code it maps to no button, a spot off
+ * its art).
  */
-function holdKey(e, code, down) {
-  const button = code?.startsWith('Pad') ? Object.keys(e.input.gamepadButtons).find((i) => e.input.gamepadButtons[i] === code) : undefined;
-  if (button === undefined) {
-    if (code) e.input.setKey(code, down);
-    return;
+function holdKey(e, step, down) {
+  const pad = { connected: true, mapping: 'standard', index: 0, id: 'check.mjs pad', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, () => ({ pressed: false, value: 0 })) };
+  if (step === null) return e.input.setGamepads([pad]);
+  if (step.kind === 'key') return e.input.setKey(step.code, down);
+  if (step.kind === 'pad') {
+    const dpadAt = { PadUp: 12, PadDown: 13, PadLeft: 14, PadRight: 15 }; // DPAD's (this runs in the page too)
+    const dpad = Object.hasOwn(dpadAt, step.code) ? dpadAt[step.code] : undefined;
+    const button = dpad ?? Number(Object.keys(e.input.gamepadButtons).find((i) => e.input.gamepadButtons[i] === step.code));
+    if (!Number.isInteger(button)) throw new Error(`check.mjs: no button of the pad presses ${step.code} in this game (input.gamepadButtons)`);
+    if (down) pad.buttons[button] = { pressed: true, value: 1 };
+    return e.input.setGamepads([pad]);
   }
-  const on = (i) => down && i === Number(button);
-  e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'check.mjs pad', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on(i), value: on(i) ? 1 : 0 })) }]);
+  if (step.kind === 'stick') {
+    const i = step.code === 'PadLStick' ? 0 : 2;
+    if (down) [pad.axes[i], pad.axes[i + 1]] = [step.stick[0], -step.stick[1]]; // the browser's y points down
+    return e.input.setGamepads([pad]);
+  }
+  if (step.kind === 'pointer') {
+    const { width, height } = e.renderer.resolution;
+    if (step.at && down) {
+      const [x, y] = step.at;
+      if (x < 0 || y < 0 || x >= width || y >= height) throw new Error(`check.mjs: ${step.code}@${x},${y} is off the art (${width}×${height} pixels)`);
+      e.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2);
+      e.input.noteDevice('keyboard'); // the mouse moved: keyboard and mouse are in use
+    }
+    const bit = { MouseLeft: 1, MouseRight: 2, MouseMiddle: 4 }[step.code] ?? 0;
+    if (bit) e.input.setButtons(down ? bit : 0);
+  }
+}
+
+/** Where art pixel `at` ([x, y]) is on the page, in CSS pixels (in the page: on the canvas the engine's pointer reads). */
+function artToPage(at) {
+  const e = window.__PIXEL_ENGINE__;
+  const { width, height } = e.renderer.resolution;
+  const [x, y] = at;
+  if (x < 0 || y < 0 || x >= width || y >= height) return { off: `${x},${y} is off the art (${width}×${height} pixels)` };
+  const r = (e.renderer.renderer?.domElement ?? document.querySelector('canvas')).getBoundingClientRect();
+  return { x: r.left + ((x + 0.5) / width) * r.width, y: r.top + ((y + 0.5) / height) * r.height };
 }
 
 /**
@@ -250,12 +346,12 @@ async function runHeadless(file) {
   if (!existsSync(path)) fail(`no module ${file}`);
   const dir = engineDir(dirname(path));
   if (!dir) fail(`no pixel-engine.js in ${dirname(path)} or a folder above it`);
-  const report = { ok: false, mode: 'headless', module: relative(process.cwd(), path) || file, keys: opts.keys ?? '*90', frames: 0, fingerprint: null, replayed: null, status: null, state: null, errors: [] };
+  const report = { ok: false, mode: 'headless', module: relative(process.cwd(), path) || file, keys: opts.keys ?? '*90', frames: 0, fingerprint: null, replayed: null, status: null, device: null, state: null, errors: [] };
   const finish = () => {
     report.ok = report.errors.length === 0 && report.fingerprint !== null && report.replayed === report.fingerprint;
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
-    console.log(`check.mjs --headless ${report.module}: ${report.frames} frames in Node${report.status ? `, ${report.status}` : ''}`);
+    console.log(`check.mjs --headless ${report.module}: ${report.frames} frames in Node${report.status ? `, ${report.status}` : ''}${report.device ? `, the device in use ${report.device}` : ''}`);
     if (report.fingerprint === null) console.log('  not replayed: the run did not finish');
     else console.log(`  fingerprint ${report.fingerprint}; replayed ${report.replayed === report.fingerprint ? 'to the same' : `to ${report.replayed ?? '-'} (not the same)`}`);
     for (const e of report.errors) console.log(`  error: ${e.split('\n')[0]}`);
@@ -286,15 +382,31 @@ async function runHeadless(file) {
   let engine = null;
   try {
     engine = await within(Engine.headless(make(), { assets: read, viewport: { width: vw, height: vh, dpr: 1 } }), 'the game\'s start');
+    if (keys.some((k) => k.kind === 'pad' || k.kind === 'stick')) {
+      holdKey(engine, null, true); // the pad plugged in a frame before it is used
+      engine.step(1);
+    }
     for (const k of keys) {
-      holdKey(engine, k.code, true);
+      if (k.kind === 'pointer' && k.at) {
+        // the mouse travels there over TRAVEL frames, from where it was (else the top left corner)
+        const { width, height } = engine.renderer.resolution;
+        const p = engine.input.pointer;
+        const from = p.over ? [((p.x + 1) / 2) * width - 0.5, ((1 - p.y) / 2) * height - 0.5] : [0, 0];
+        for (let i = 1; i < TRAVEL; i++) {
+          holdKey(engine, { kind: 'pointer', code: 'Mouse', at: from.map((v, j) => Math.max(0, v + ((k.at[j] - v) * i) / TRAVEL)) }, true);
+          engine.step(1);
+        }
+      }
+      holdKey(engine, k, true);
       engine.step(k.frames);
-      holdKey(engine, k.code, false);
+      holdKey(engine, k, false);
+      if (k.kind === 'pointer' && k.code !== 'Mouse') engine.step(1); // the button let go: a click ends on the next frame
     }
     report.fingerprint = engine.fingerprint();
     report.frames = engine.state().frame;
     report.state = engine.state();
     report.status = report.state.status || null;
+    report.device = engine.input.device;
     const rec = JSON.parse(JSON.stringify(engine.recording()));
     await within(engine.replay(rec, () => engine.loadGame(make())), 'the replay');
     report.replayed = engine.fingerprint();
@@ -471,7 +583,7 @@ const browser = await launch(server);
 
 /** `?touch=1`: a phone's touch screen (a coarse pointer, so the page has its touch controls). */
 const touch = new URL(url, 'http://localhost/').searchParams.get('touch') === '1';
-const report = { page: target, url, ok: false, errors: [], warnings: [], shots: [], state: null, ...(touch ? { touch: null } : {}) };
+const report = { page: target, url, ok: false, errors: [], warnings: [], shots: [], state: null, device: null, ...(touch ? { touch: null } : {}) };
 /** The browser had no WebGPU (the engine's "WebGPU unavailable"): the environment's fault, not the game's. */
 let noWebGPU = false;
 try {
@@ -505,25 +617,68 @@ try {
   // here, as a tap would): its prompts and controls show.
   if (touch) await page.evaluate(() => window.__PIXEL_ENGINE__.input.noteDevice('touch'));
 
-  // Play: hold each key for its frames (frame-exact manual time). A hook that throws during
-  // step() throws here: report it as the game's error, stop playing, still take the shots.
-  for (const k of keys) {
-    const thrown = await page.evaluate(({ code, frames, hold }) => {
+  // Play: hold each step for its frames (frame-exact manual time). A hook that throws during
+  // step() throws here: report it as the game's error, stop playing, still take the shots. The
+  // fake pad is plugged in a frame before it is first used (a pad seen for the first time with its
+  // stick over is resting there, as a player's would be); the mouse is the browser's own (real
+  // pointer events on what is at that spot: the canvas, the ⚙, the settings panel).
+  const run = (step, frames) =>
+    page.evaluate(({ step, frames, hold }) => {
       const e = window.__PIXEL_ENGINE__;
       const holdKey = new Function(`return ${hold}`)();
       try {
-        holdKey(e, code, true);
+        holdKey(e, step, true);
         e.step(frames);
-        holdKey(e, code, false);
+        holdKey(e, step, false);
         e.step(1);
         return null;
       } catch (err) {
-        holdKey(e, code, false);
+        try {
+          holdKey(e, step, false);
+        } catch {
+          /* a step the game can't take: nothing was held */
+        }
         return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       }
-    }, { ...k, hold: holdKey.toString() });
+    }, { step, frames, hold: holdKey.toString() });
+  if (keys.some((k) => k.kind === 'pad' || k.kind === 'stick')) await page.evaluate(({ hold }) => {
+    const e = window.__PIXEL_ENGINE__;
+    new Function(`return ${hold}`)()(e, null, true);
+    e.step(1);
+  }, { hold: holdKey.toString() });
+  const mouseButton = { MouseLeft: 'left', MouseRight: 'right', MouseMiddle: 'middle' };
+  let mouse = { x: 0, y: 0 }; // Playwright's mouse starts in the top left corner
+  for (const k of keys) {
+    let thrown;
+    if (k.kind === 'pointer') {
+      const spot = k.at ? await page.evaluate(artToPage, k.at) : null;
+      if (spot?.off) {
+        report.errors.push(`check: ${k.code}@${spot.off}`);
+        break;
+      }
+      // the mouse travels there over TRAVEL frames, as a hand moves it: hover follows a pointer
+      // that moves (a menu opened under a resting one keeps its focus)
+      for (let i = 1; spot && i <= TRAVEL && !thrown; i++) {
+        await page.mouse.move(mouse.x + ((spot.x - mouse.x) * i) / TRAVEL, mouse.y + ((spot.y - mouse.y) * i) / TRAVEL, { steps: 2 });
+        thrown = await page.evaluate(() => {
+          try {
+            window.__PIXEL_ENGINE__.step(1);
+            return null;
+          } catch (err) {
+            return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+          }
+        });
+      }
+      if (spot) mouse = spot;
+      const button = mouseButton[k.code];
+      if (button && !thrown) await page.mouse.down({ button });
+      thrown ??= await run({ kind: 'idle', code: null }, k.frames);
+      if (button) await page.mouse.up({ button });
+      thrown ??= await run({ kind: 'idle', code: null }, 0);
+    } else thrown = await run(k, k.frames);
     if (thrown) {
-      report.errors.push(`game: ${thrown} (while holding ${k.code ?? 'nothing'})`);
+      const said = k.kind === 'stick' ? `${k.code}:${k.stick}` : k.at ? `${k.code}@${k.at}` : (k.code ?? 'nothing');
+      report.errors.push(thrown.startsWith('Error: check.mjs: ') ? `check: ${thrown.slice('Error: check.mjs: '.length)}` : `game: ${thrown} (while holding ${said})`);
       break;
     }
   }
@@ -609,6 +764,7 @@ try {
     else report.errors.push(`unknown look "${look}"`);
   }
   report.state = await page.evaluate(() => window.__PIXEL_ENGINE__.state());
+  report.device = await page.evaluate(() => window.__PIXEL_ENGINE__.input.device);
   for (const e of report.state.errors ?? []) if (!report.errors.some((r) => r.startsWith(`game: ${e}`))) report.errors.push(`game: ${e}`);
   for (const e of report.state.gpuErrors ?? []) report.errors.push(`gpu: ${e.type} ${e.message}`);
   report.ok = report.errors.length === 0;
@@ -622,7 +778,7 @@ try {
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
 const s = report.state;
-console.log(`${report.ok ? 'OK' : 'FAILED'}  ${report.page}${s ? `  (${s.backend}, engine ${s.version}, ${s.frame} frames, "${s.status}")` : ''}`);
+console.log(`${report.ok ? 'OK' : 'FAILED'}  ${report.page}${s ? `  (${s.backend}, engine ${s.version}, ${s.frame} frames, "${s.status}", the device in use ${report.device})` : ''}`);
 for (const shot of report.shots) console.log(`  shot ${shot.file}  (${shot.colors === null ? 'the page, with the touch controls' : `${shot.colors} colours`})`);
 if (report.touch) console.log(`  touch: ${report.touch.controls ? `${report.touch.visible ? 'shown' : 'hidden'}, the device in use ${report.touch.device}, buttons ${report.touch.buttons.map((b) => `${b.label} (${b.code}${b.hidden ? ', hidden' : ''})`).join(', ') || 'none'}` : 'no touch controls'}`);
 for (const w of report.warnings.slice(0, 10)) console.log(`  warning: ${w}`);

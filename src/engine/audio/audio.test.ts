@@ -92,27 +92,90 @@ describe('AudioManager without Web Audio (headless)', () => {
     audio.dispose();
   });
 
-  it('stores volume changes, except while persist is off (a replay)', () => {
-    const stored = new Map<string, string>();
+  /** A localStorage double on globalThis for `run`, and the reads and writes made through it. */
+  const withStorage = (seed: Record<string, string>, run: (stored: Map<string, string>, log: string[]) => void) => {
+    const stored = new Map(Object.entries(seed));
+    const log: string[] = [];
     const was = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
     Object.defineProperty(globalThis, 'localStorage', {
-      value: { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => stored.set(k, v), removeItem: (k: string) => stored.delete(k) },
+      value: {
+        getItem: (k: string) => (log.push(`get ${k}`), stored.get(k) ?? null),
+        setItem: (k: string, v: string) => (log.push(`set ${k}`), stored.set(k, v)),
+        removeItem: (k: string) => (log.push(`remove ${k}`), stored.delete(k)),
+      },
       configurable: true,
     });
     try {
-      const audio = new AudioManager(new EventTarget());
-      audio.setVolume('master', 0.5);
-      expect(JSON.parse(stored.get('pixel-engine:audio')!)).toMatchObject({ master: 0.5, muted: false });
-      audio.persist = false;
-      audio.setVolume('master', 0.2);
-      audio.setMuted(true);
-      expect(audio.volume).toMatchObject({ master: 0.2, muted: true }); // heard
-      expect(JSON.parse(stored.get('pixel-engine:audio')!)).toMatchObject({ master: 0.5, muted: false }); // not written
-      audio.dispose();
+      run(stored, log);
     } finally {
       if (was) Object.defineProperty(globalThis, 'localStorage', was);
       else delete (globalThis as { localStorage?: unknown }).localStorage;
     }
+  };
+
+  it('stores volume changes under the game\'s own key, except while persist is off (a replay)', () => {
+    withStorage({}, (stored) => {
+      const audio = new AudioManager(new EventTarget(), 'gem-rush');
+      audio.setVolume('master', 0.5);
+      expect(JSON.parse(stored.get('pixel-engine:audio:gem-rush')!)).toMatchObject({ master: 0.5, muted: false });
+      audio.persist = false;
+      audio.setVolume('master', 0.2);
+      audio.setMuted(true);
+      expect(audio.volume).toMatchObject({ master: 0.2, muted: true }); // heard
+      expect(JSON.parse(stored.get('pixel-engine:audio:gem-rush')!)).toMatchObject({ master: 0.5, muted: false }); // not written
+      expect([...stored.keys()]).toEqual(['pixel-engine:audio:gem-rush']);
+      audio.dispose();
+    });
+  });
+
+  it('keeps each game\'s volumes apart on one origin (52in1\'s games share one storage)', () => {
+    withStorage({}, (stored) => {
+      const riftlight = new AudioManager(new EventTarget(), 'riftlight');
+      riftlight.setMuted(true);
+      riftlight.setVolume('music', 0.1);
+      riftlight.dispose();
+      const gems = new AudioManager(new EventTarget(), 'gem-rush');
+      expect(gems.volume).toMatchObject({ master: 0.8, sfx: 1, music: 0.6, muted: false }); // its own: the defaults
+      gems.setVolume('sfx', 0.3);
+      gems.dispose();
+      const again = new AudioManager(new EventTarget(), 'riftlight');
+      expect(again.volume).toMatchObject({ music: 0.1, sfx: 1, muted: true }); // survives a reload, untouched by the other
+      again.dispose();
+      expect([...stored.keys()].sort()).toEqual(['pixel-engine:audio:gem-rush', 'pixel-engine:audio:riftlight']);
+    });
+  });
+
+  it('takes the volumes every game once shared, once, and never writes that key', () => {
+    const shared = JSON.stringify({ master: 0.4, sfx: 0.5, music: 0.2, muted: true });
+    withStorage({ 'pixel-engine:audio': shared }, (stored, log) => {
+      const first = new AudioManager(new EventTarget(), 'riftlight');
+      expect(first.volume).toMatchObject({ master: 0.4, sfx: 0.5, music: 0.2, muted: true });
+      expect(JSON.parse(stored.get('pixel-engine:audio:riftlight')!)).toMatchObject({ master: 0.4, muted: true }); // saved as its own at once
+      first.setMuted(false);
+      first.dispose();
+      log.length = 0;
+      const next = new AudioManager(new EventTarget(), 'riftlight');
+      expect(next.volume).toMatchObject({ master: 0.4, muted: false }); // its own from now on
+      next.resetVolumes();
+      next.dispose();
+      expect(log.filter((l) => l.endsWith(' pixel-engine:audio'))).toEqual([]); // not read again
+      // another game starts from the shared ones too; the shared key itself is never written
+      const other = new AudioManager(new EventTarget(), 'world');
+      expect(other.volume).toMatchObject({ music: 0.2, muted: true });
+      other.dispose();
+      expect(stored.get('pixel-engine:audio')).toBe(shared);
+      expect(log.some((l) => /^(set|remove) pixel-engine:audio$/.test(l))).toBe(false);
+    });
+  });
+
+  it('keeps nothing without a key (a lab, a headless engine)', () => {
+    withStorage({ 'pixel-engine:audio': JSON.stringify({ master: 0.1, sfx: 1, music: 1, muted: true }) }, (stored, log) => {
+      const audio = new AudioManager(new EventTarget());
+      expect([audio.key, audio.volume.muted]).toEqual([null, false]);
+      audio.setMuted(true);
+      audio.dispose();
+      expect([log, stored.size]).toEqual([[], 1]);
+    });
   });
 });
 

@@ -28,7 +28,13 @@ interface Prop {
   mesh: Mesh;
 }
 
-const STORE = 'pixel-engine:sandbox';
+/**
+ * Where the layout is saved: under Engine World's own key (its settings are `pixel-engine:settings:world`),
+ * never one every game on an origin shares (52in1's games share one). A layout saved before is read
+ * from the shared key until one is saved here; that key is never written.
+ */
+const SANDBOX_STORE = 'pixel-engine:sandbox:world';
+const SHARED_STORE = 'pixel-engine:sandbox';
 /** The most props a layout may hold (a bigger one is not loaded). */
 const MAX_PROPS = 400;
 
@@ -136,7 +142,7 @@ export const SANDBOX: RoomDef = {
     };
     const save = () => {
       try {
-        localStorage.setItem(STORE, JSON.stringify(layout()));
+        localStorage.setItem(SANDBOX_STORE, JSON.stringify(layout()));
         return true;
       } catch {
         return false;
@@ -144,7 +150,7 @@ export const SANDBOX: RoomDef = {
     };
     const restore = () => {
       try {
-        const raw = localStorage.getItem(STORE);
+        const raw = localStorage.getItem(SANDBOX_STORE) ?? localStorage.getItem(SHARED_STORE);
         return !!raw && load(JSON.parse(raw));
       } catch {
         return false;

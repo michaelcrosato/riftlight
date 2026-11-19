@@ -220,9 +220,18 @@ await engine.loadGame(new Level2());     // next level: same renderer, camera, i
 
 Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are off outside
 `?debug=1`; players get a settings panel (picture, sound, controls; saved per game) from the ⚙
-button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it; `padButton: true`:
-Options opens it). A game that uses R, P or M itself moves that hotkey for `?debug=1` with
-`debugKeys: { resolution: 'F2' }`; `touchButtons` replaces the on-screen buttons (CONTROLS.md).
+button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it). A game with a
+pause menu opens the panel from there (`ctx.engine.settings.open()`) and hides the ⚙; one with
+none passes `padButton: true`, so Options and Esc open it (the kit's `game.js`). In a 52in1 round,
+which never pauses, Gem Rush turns both off (CONTROLS.md). A game that uses R, P or M itself
+moves that hotkey for `?debug=1` with `debugKeys: { resolution: 'F2' }`.
+
+Touch (CONTROLS.md): `touchButtons` replaces the on-screen buttons (each presses a key code; `at`
+puts one in a corner, thumb sized), `touchStick: 'floating'` brings the stick under the thumb, and
+`touchDensity: 2` keeps a phone's art at two CSS pixels a pixel or more;
+`ctx.engine.touch?.rects()` says where they are (a floating stick rests low in its `zone`, which
+takes every touch in it).
+
 `loadGame` works from anywhere (a trigger, `update`); the swap happens after the frame and
 frees the old game's scene objects, physics, triggers, particles, HUD, music and lights.
 
@@ -273,8 +282,10 @@ hero.attachModel(model, compileClips(HERO_CLIPS, HERO_RIG, model), HERO_RIG);
 Controls (`readMoveInput`, camera-relative in every preset): WASD / arrows move (Shift
 walks), Space jumps (again on landing: double, triple; wall kicks), C crouches (+ Space
 backflip; running: slide, long jump; in the air: ground pound), J punch / kick / dive, F grab
-and pull, Z prone, X lie down, V wave, B sit. Ledges, climbing (`climbable`), pushing
-(`pushable`), slopes and stairs just work. Pads (`KEYMAP`) and touch play it too.
+and pull, Z prone, X lie down, V wave, B sit. On a pad (`KEYMAP`, PlayStation's names): the left
+stick or d-pad moves (L2 walks), Cross jumps, Circle crouches, Square attacks, Triangle grabs, L1
+prone, R1 lie down, Create waves, L3 sits; touch plays it too. Ledges, climbing (`climbable`),
+pushing (`pushable`), slopes and stairs just work.
 
 The game drives it with: `hero.teleport([x, y, z])` (feet position; resets momentum),
 `hero.hurt(from)` (knocked back away from `from`, the direction from the hero to what hit it:
@@ -295,6 +306,18 @@ between steps), `moveAxis()` (`{ x, y }` from keys, stick or touch). Codes are
 (`PadA` Cross, `PadB` Circle, `PadStart` Options...: `GAMEPAD_BUTTONS`; the d-pad is the arrows),
 so bind both: `isDown('Space', 'PadA')`. **`CONTROLS.md` is the standard every game meets** (pads,
 prompts, menus, touch, 52in1): read it.
+
+As a menu opens or closes, `input.release()` lets go of everything held: the press that opened
+it never acts in it, and a stick held from a run steps no row until it is back in its deadzone. As
+it closes, `input.clearQueued()` also drops the presses `consumePress` still keeps, so the Cross
+that chose Resume never reaches `fixedUpdate`.
+
+Several players on one device (`same-screen`, `split-screen`, `hot-seat`, CONTROLS.md section 7):
+the input is player 1's (keys, mouse, touch, every pad) until the game turns on
+`ctx.input.padPlayers` and, where joining is meant, `ctx.input.joinWith = ['PadA']`: a pad that
+presses Cross joins (`ctx.input.joinedNow`), stops moving player 1, and `ctx.input.player(slot)`
+reads it alone (recorded: it replays). Same-screen keeps everyone in view; hot-seat says whose
+turn it is.
 
 ### Physics queries and triggers
 
@@ -806,6 +829,8 @@ cycle looks, M mute.
 ```
 node check.mjs                                  # index.html: start, run 90 frames, screenshot
 node check.mjs --keys KeyD*60,Space*4,KeyD*40   # hold each key for that many frames, in order
+node check.mjs --keys PadLStick:1,0*60,PadUp*8,PadA*4   # a fake pad: a stick (x right, y up, -1..1), the d-pad, Cross
+node check.mjs --keys Mouse@240,120*5,MouseLeft@240,150*3   # the mouse at art pixels (the HUD's): hover, then click
 node check.mjs examples/side-scroller.html --cameras --looks noir,handheld
 node check.mjs "index.html?look=handheld&zoom=1.5"   # with URL flags
 node check.mjs --sheets models.js               # sheets of your own models and textures (ASSETS.md)
@@ -813,9 +838,12 @@ node check.mjs --sheets models.js               # sheets of your own models and 
 
 It plays on WebGPU in Chromium's headless shell (no display). It writes
 `check/<page>.png` (the frame with the HUD), the camera and look shots and
-`check/report.json` (errors, warnings, `state()`), and prints a summary: the backend, frames
-and your `status()`. Exit code 0: the game started, ran with no page, console, game or GPU
-errors and drew a real picture; 1: it didn't; 2: the tool couldn't run (a browser without
+`check/report.json` (errors, warnings, `state()`, the `device` in use), and prints a summary:
+the backend, frames and your `status()`. A step is a key's `event.code`, a pad's button (`PadA`
+... `PadTouchpad`), d-pad (`PadUp`, `PadDown`, `PadLeft`, `PadRight`) or stick held on a fake
+pad, or the mouse (it travels there over 4 frames, so hover follows); a mistyped code stops it.
+Exit code 0: the game started, ran with no page, console, game or GPU errors and drew a real
+picture; 1: it didn't; 2: the tool couldn't run (a browser without
 WebGPU, bad arguments, no page, no browser; `--help` lists the options). It needs Node 20.15+ (or 22.2+) and Playwright
 (`npm i -D playwright && npx playwright install chromium`), or
 `playwright-core` plus a Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
@@ -840,6 +868,11 @@ console.log(engine.state().status, engine.fingerprint() === end);
 ```
 
 Code that touches `document` guards it, as the starter does.
+
+**A 52in1 round in Node** (CONTROLS.md section 6): `LocalHub` plays one in memory, on a manual
+clock: `new LocalHub({ mode: 'moments', moment: { id: 'gem-dash', seconds: 8 }, players: 2 })`,
+its `client(i)` passed to `HubSession.join` for each copy of the game, `hub.advance(ms)` to move
+time. Then run 52in1's harness on the built page, in every mode the game offers.
 
 ## 9. Before you hand back
 

@@ -89,6 +89,7 @@ const FIELDS = new Set([
   ...LOCAL,
   ...DUALSENSE,
   ...[...read('src/engine/hub/session.ts').matchAll(/\| \{ readonly type: '([\w-]+)'/g)].map((m) => m[1]!),
+  'description', // the catalogue head's <meta name="description">
 ]);
 /**
  * The bare lower-case names in `texts` (code spans: a name alone, or `name: value`, an option with
@@ -603,11 +604,13 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(out).toEqual([]);
   });
 
-  it('Gem Rush’s page, as the kit ships it, carries the session client and its head tags; they pass 52in1’s catalogue checker and name its moments', async () => {
+  it('Gem Rush’s page, as the kit ships it, carries the session client and a whole catalogue head: 52in1’s checker asks only for what each game fills in (hub:model); it names its moments and holds its lines', async () => {
     const head = guideHeads(guide).get('gem-rush')!;
     expect(head, 'an `html gem-rush` fence').toBeTruthy();
     const tags = [...head.matchAll(/^<meta name="([\w:-]+)" content="([^"]*)">$/gm)].map((m) => [m[1]!, m[2]!] as const);
-    expect(tags.length).toBe(head.trim().split('\n').length); // every line is a tag that reads
+    // every line is a tag that reads: the title, the icon, the meta tags, the game-lines block last
+    const lines = head.trim().split('\n');
+    expect([lines[0]!.startsWith('<title>'), lines[3]!.startsWith('<link rel="icon"'), tags.length, lines.at(-1)!.startsWith('<script type="application/json" id="game-lines">')]).toEqual([true, true, lines.length - 3, true]);
     const all = (name: string) => tags.filter(([k]) => k === name).map(([, v]) => v);
     const one = (name: string) => all(name)[0] ?? '';
     // the page the kit ships (scripts/bundle.mjs: a folder, the engine in pixel-engine.js reads
@@ -616,11 +619,17 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(page.indexOf(`<script>${read('scripts/hub/session.js')}</script>`), 'the client, unmodified, right after <meta charset>').toBe(page.indexOf('<meta charset="utf-8" />') + '<meta charset="utf-8" />'.length + 5);
     const { problems, fields } = checkPage(page, { folder: { files: new Set(['gem-rush.html', 'gem-rush.js', '../pixel-engine.js']) } });
     expect([fields.session, fields.sessionMode, fields.sessionPlayers, typeof fields.client]).toEqual(['1', 'parallel', '1-4', 'string']);
-    // every problem about the guide's tags, the ones it names or where they sit (the rest, hub:model,
-    // the title..., is each game's own)
-    const ours = [...new Set(tags.map(([k]) => k)), 'hub:session', 'hub:moment', 'hub:multiplayer', 'hub:tags', 'hub:controls', 'hub:dualsense', 'moments', 'after a script'];
-    expect(problems.filter((p) => ours.some((w) => p.text.includes(w)))).toEqual([]);
-    expect(problems.some((p) => /hub:model/.test(p.text)), 'the checker read the page').toBe(true);
+    // the whole head: the one problem left is the model, which each game fills in (its TBD); the
+    // name and tagline split at the em dash; the checklist names every tag the head needs
+    expect(problems.map((p) => `${p.level}: ${p.text}`)).toEqual(['error: no hub:model: the model that wrote the game, as its maker names it']);
+    expect([fields.name, fields.tagline, fields.type, fields.genre]).toEqual(['Gem Rush', 'Grab every gem in time', 'Game', 'Action']);
+    const checklist = guide.slice(guide.indexOf('**The head says so**'), guide.indexOf('**Storage of its own.**'));
+    const named = ['<title>', 'description', 'theme-color', 'data:image', 'game-lines', ...new Set(tags.map(([k]) => k).filter((k) => !k.startsWith('hub:session-') && k !== 'hub:moment')), 'hub:moment'];
+    expect(named.filter((k) => !checklist.includes(`\`${k}`))).toEqual([]);
+    // its game-lines block is the lines the game draws its words from
+    const block = /<script type="application\/json" id="game-lines">(.*)<\/script>/.exec(head)![1]!;
+    const { LINES } = await load('gem-rush');
+    expect(JSON.parse(block)).toEqual(LINES);
     // the Couch draws each control's keys as keycaps; a pad and touch play it all
     expect(one('hub:controls').split(';').filter((c) => !opensWithKeys(c.trim()))).toEqual([]);
     expect([one('hub:tags').split(', ').filter((t) => t === 'gamepad' || t === 'touch'), /\bgamepad\b/.test(one('hub:controls'))]).toEqual([['gamepad', 'touch'], true]);
