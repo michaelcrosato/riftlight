@@ -266,12 +266,15 @@ export interface EngineOptions {
    * On a phone (the viewport's short side under 500 CSS px, either orientation) on a page with touch
    * controls, about this many CSS pixels per art pixel (the whole number of device pixels nearest it,
    * a tie the bigger: `touchScale`; at DPR 2 or 3 exactly, at a Pixel's 2.625 1.9): fewer, bigger art
-   * pixels, so text and targets stay thumb-sized. It holds while the page has touch controls, also while they step
+   * pixels, so text and targets stay thumb-sized. Never fewer art rows on the short side than a 340
+   * CSS px side has at it (`touchRows`: 170 at 2): a phone too short for them (held sideways under a
+   * browser's bar, 303 CSS px) takes the largest whole number of device pixels that keeps them (1.52
+   * CSS px there). It holds while the page has touch controls, also while they step
    * aside for a pad or the keyboard (the art size never changes with the device in use). The world
    * in view is the same (the camera's view height and field of view are kept); only the pixel
    * density changes, again on every resize and rotation. Under `fill` (the default aspect).
    * Default 0 (`DEFAULT_TOUCH_DENSITY`: the art size the viewport gives); pass 2 once the game's HUD
-   * fits about 180 rows (a landscape phone at 2 has 181 to 195).
+   * fits 170 rows (a landscape phone at 2 has 170 or more).
    */
   touchDensity?: number;
   /**
@@ -325,8 +328,8 @@ interface BootSteps {
 
 /**
  * `EngineOptions.touchDensity`'s default: none, the art size the viewport gives. A game opts in
- * (2: about two CSS pixels per art pixel on a phone) once its HUD fits a landscape phone's 181 to
- * 195 rows.
+ * (2: about two CSS pixels per art pixel on a phone) once its HUD fits a landscape phone's 170 rows
+ * (`touchRows`).
  */
 export const DEFAULT_TOUCH_DENSITY = 0;
 

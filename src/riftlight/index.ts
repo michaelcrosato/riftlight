@@ -27,8 +27,8 @@ export { HUB_WAKE, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, riftlig
  * touch action cluster (`game/touch.ts`; in 52in1, its page's `window.AIHubSettings` set by the
  * hub's first script, ≡ below the hub's wake band) with a floating joystick (its base comes under the
  * thumb anywhere in the lower left), a phone's art at about two CSS pixels per art pixel
- * (`touchDensity`: the HUD and the panels lay out in a landscape phone's 195 rows, with targets a
- * thumb tall), no engine tool bar on phones (it shows with `?debug=1`), no ⚙ button: Riftlight's
+ * (`touchDensity`: the HUD and the panels lay out in a landscape phone's 170 rows or more, about 195,
+ * with targets a thumb tall), no engine tool bar on phones (it shows with `?debug=1`), no ⚙ button: Riftlight's
  * own Settings menu holds the engine's options, motion aim (a DualSense's turns through 52in1
  * turn the pad's aim: its rows are in that menu) and the voice (a shout into 52in1's microphone uses
  * War Cry: `KEYS.shout`; its Voice row is in that menu too, the engine panel's Microphone row).

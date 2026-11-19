@@ -228,7 +228,8 @@ moves that hotkey for `?debug=1` with `debugKeys: { resolution: 'F2' }`.
 
 Touch (CONTROLS.md): `touchButtons` replaces the on-screen buttons (each presses a key code; `at`
 puts one in a corner, thumb sized), `touchStick: 'floating'` brings the stick under the thumb, and
-`touchDensity: 2` keeps a phone's art at about two CSS pixels a pixel;
+`touchDensity: 2` keeps a phone's art at about two CSS pixels a pixel and at least 170 rows (fewer
+CSS pixels on a phone too short for them);
 `ctx.engine.touch?.rects()` says where they are (a floating stick rests low in its `zone`, which
 takes every touch in it).
 

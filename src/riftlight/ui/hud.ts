@@ -453,6 +453,10 @@ function guestsRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
  * heroes on screen: the first out of the heroes' rows (`heroRows`: the fight goes on there); with
  * none, the one over the least of the heroes, and of those beside the top-left block (or anywhere
  * else) rather than in a row of strips across the screen's middle, where the camera keeps them.
+ * Where that one is still over a hero, its strips narrow (to `STRIP.min`, kept to the side of the
+ * screen it is on) as far as takes them off the heroes (a short landscape phone at 1.5 CSS px an
+ * art pixel, 379×214: three guests under the tuning's rows, beside the stick, the mana orb climbed
+ * beside the top-left block), or the least of them.
  */
 function offHeroes(spots: readonly GuestsPlace[], W: number, heroes: readonly Box[]): GuestsPlace {
   const rows = heroRows(W, heroes);
@@ -461,10 +465,19 @@ function offHeroes(spots: readonly GuestsPlace[], W: number, heroes: readonly Bo
   if (out) return out;
   const over = (p: Box) => heroes.reduce((sum, z) => sum + overlapArea(p, z), 0);
   const across = (p: GuestsPlace) => p.cols > 1 && p.x < W / 2 && p.x + p.w > W / 2;
-  return spots.reduce((best, p) => {
+  const best = spots.reduce((best, p) => {
     const d = over(p) - over(best);
     return d < 0 || (d === 0 && across(best) && !across(p)) ? p : best;
   });
+  // narrower strips cover less of what is under them (still clear of the fixed HUD): from the side
+  // of the screen it is on, the widest off the heroes, else the one over the least of them
+  let narrowed = best;
+  for (let strip = best.strip - 1; strip >= STRIP.min && over(narrowed) > 0; strip--) {
+    const w = best.cols * strip + (best.cols - 1) * STRIP.gap;
+    const p = { ...best, w, strip, x: best.x + best.w / 2 < W / 2 ? best.x : best.x + best.w - w };
+    if (over(p) < over(narrowed)) narrowed = p;
+  }
+  return narrowed;
 }
 
 /** The rows the heroes stand in, across the screen (`HudModel.heroes`, `card.heroes`), or null without them. */
