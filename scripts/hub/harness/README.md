@@ -15,6 +15,9 @@ suite serves the built page with it, as the Worker does (`scripts/e2e-hub-compan
 plays the hub page's side, 52in1's `assets/js/ui/frames.js`, at the same commit; docs/game/hub.md
 *In 52in1's frame*).
 
+`scripts/hub/LICENSE` is `lib/hub/LICENSE` (MIT, blob `3b9c8c68416f194a1a1a6aa3327a4bd952b96145`, added in 52in1 `b59a5fcd`): the
+licence of every file here.
+
 All six are 52in1's `lib/hub/` at commit `1b87a11946a57866d311a5e10080334d15dc2700` (`main`,
 2026-11-19; session client 1.4.0), byte for byte: `git hash-object` on each gives that commit's blob
 (companion.js: `eb487f1624db4cea3b12dc41d533e9b18af7272e`).
