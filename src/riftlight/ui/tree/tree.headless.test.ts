@@ -187,4 +187,37 @@ describe('riftlight passive tree', () => {
     },
     T,
   );
+  it(
+    'L2 and R2 zoom it by how far they are pulled (analog): half a pull half as fast as a full one; L2 zooms out',
+    () => {
+      const { rl, engine } = h;
+      /** The pad in slot 0 with L2 at `lt` and R2 at `rt` (0..1, as the browser reports a trigger). */
+      const pad = (lt = 0, rt = 0) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: (i === 6 && lt > 0.5) || (i === 7 && rt > 0.5), value: i === 6 ? lt : i === 7 ? rt : 0 })) });
+      engine.input.setGamepads([pad()]);
+      engine.step(1);
+      expect(rl.press('KeyP').ui).toEqual(['tree']);
+      const zoom = () => (panel() as unknown as { nav: { cam: { zoom: number } } }).nav.cam.zoom;
+      /** How far the zoom went (its log) over `frames` frames of a pull. */
+      const pull = (lt: number, rt: number, frames = 12) => {
+        const z0 = zoom();
+        engine.input.setGamepads([pad(lt, rt)]);
+        engine.step(frames);
+        engine.input.setGamepads([pad()]);
+        engine.step(1);
+        return Math.log(zoom() / z0);
+      };
+      pull(0, 0.5, 1); // the first pull picks the pad up
+      const half = pull(0, 0.5);
+      const full = pull(0, 1);
+      expect(half, 'R2 half pulled zooms in').toBeGreaterThan(0);
+      expect(full / half, 'a full pull twice as fast').toBeCloseTo(2, 1);
+      expect(pull(0, 0.05), 'a trigger resting a hair down: nothing').toBe(0);
+      expect(pull(1, 0), 'L2 zooms out').toBeLessThan(0);
+      expect(rl.press('PadB').ui).toEqual([]);
+      engine.input.setGamepads(null);
+      engine.input.noteDevice('keyboard');
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
 });
