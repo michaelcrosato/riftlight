@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.70.0
+
+- The engine hides the OS mouse pointer over its canvas (`cursor: none`) while the pad is the device in use (`controls.device`) or the pointer is locked. It shows it again once the mouse moves a few pixels, and never hides it during a replay (`input.playing`): a replay's device is the recording's, and the viewer's mouse could not bring it back. Any cursor style the game set on the canvas comes back, including one set while it was hidden. Presentation only: nothing is recorded, and nothing changes headless.
+
 ## 0.69.0
 
 - Each game keeps its own volumes. AudioManager saves mute and the master, music and effects volumes under `pixel-engine:audio:<settings key>`, beside `pixel-engine:settings:<key>` (`audioStorageKey`, exported). The key is passed as `new AudioManager(target, key)`; with no key, or `settings: { key: false }`, volumes last this session only. A game with none of its own takes the old shared `pixel-engine:audio` once and saves it as its own; the shared key is never written again. All 52in1 games share one storage, so muting one used to mute them all.
