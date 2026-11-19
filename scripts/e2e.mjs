@@ -52,8 +52,9 @@
 //                 death, a real reload → Continue; the HUD canvas, localStorage, no ⚙ button). Then
 //                 the item windows' frames (scripts/e2e-riftlight-items.mjs), a click on the tree's
 //                 canvas, its own Escape, a label click after a lost device, a phone; couch co-op on a
-//                 TV; a shout into a fake 52in1's microphone (a tone) fires War Cry once, and nothing
-//                 opens it before 52in1 allows it. The gameplay checks are headless:
+//                 TV; a shout into a fake 52in1's microphone (a tone) fires War Cry once, nothing
+//                 opens it before 52in1 allows it, and the portal on the controller's speaker can't
+//                 fire one. The gameplay checks are headless:
 //                 src/riftlight/game/flow*.test.ts, voice.test.ts, ui/items/*.headless.test.ts,
 //                 ui/tree/tree.headless.test.ts.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
