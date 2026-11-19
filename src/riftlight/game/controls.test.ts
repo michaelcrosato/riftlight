@@ -8,6 +8,8 @@ import { installLanguage, lang, riftlightLines, t } from '../lang';
 import { ARCADE_AGAIN, ARCADE_KEYS } from '../showcase/arcade/ArcadeStage';
 import { SHOWCASE_CONTROLS } from '../showcase/hints';
 import { CONTROLS, controlLabel, KEYS, keyCap, MENU_BINDINGS, MOUSE, padName, SHELL_MENU_BINDINGS } from './controls';
+import { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES } from './touch';
+import { SHOWCASE } from '../lang/showcase';
 
 afterEach(() => {
   installLanguage(new Lang(riftlightLines()));
@@ -30,7 +32,7 @@ describe('control labels', () => {
     expect(controlLabel('dodge', 'keyboard')).toBe('Space');
     expect(controlLabel('dodge', 'pad')).toBe('Circle');
     expect(controlLabel('dodge', 'pad', 'xbox')).toBe('B');
-    expect(controlLabel('dodge', 'touch')).toBe('B');
+    expect(controlLabel('dodge', 'touch'), 'the dodge button draws an icon, no letter').toBe('Dodge button');
     expect(controlLabel('interact', 'keyboard')).toBe('F');
     expect(controlLabel('interact', 'pad')).toBe('R2');
     expect(controlLabel('interact', 'touch')).toBe('Action');
@@ -68,6 +70,28 @@ describe('control labels', () => {
     expect(t('banner.levelup.point')).toBe('+1 passive point · Options');
     device = 'keyboard';
     expect(t('death.tip.physical')).toContain('(Space)');
+    device = 'touch';
+    expect(t('death.tip.physical'), 'a phone: the button as it shows, no letter it doesn’t draw').toContain('(Dodge button)');
+  });
+
+  it('on a phone, every control a line names is one the phone shows: a gesture or an icon button by a line, or a button that draws its label (≡)', () => {
+    // the buttons the shell's cluster draws with an icon in play (the attack, the dodge, the skills:
+    // `TouchPad.sync`), whose letters never show there; the showcase's lines are its own (its B shows)
+    const icons = new Set(RIFTLIGHT_TOUCH_BUTTONS.filter((b) => [TOUCH_CODES.attack, TOUCH_CODES.dodge, ...TOUCH_CODES.skills].includes(b.code as never)).map((b) => b.label));
+    expect([...icons].sort()).toEqual(['1', '2', '3', '4', 'A', 'B']);
+    const { lines } = riftlightLines();
+    const showcase = new Set(Object.keys(SHOWCASE().lines));
+    const offenders: string[] = [];
+    for (const [id, line] of Object.entries(lines)) {
+      if (showcase.has(id)) continue;
+      for (const text of typeof line === 'string' ? [line] : Object.values(line)) {
+        for (const [, action] of String(text).matchAll(/\{key:(\w+)\}/g)) {
+          const touch = (CONTROLS as ControlTable)[action!]?.touch;
+          if (touch && icons.has(touch)) offenders.push(`${id}: {key:${action}} names ${touch}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('a key name is a line: another language names its keys (en-XA brackets them)', () => {

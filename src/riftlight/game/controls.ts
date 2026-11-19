@@ -193,7 +193,8 @@ export const PAGE_LINES: Readonly<Record<Page, string>> = { inventory: 'menu.pau
  */
 export const CONTROLS = {
   attack: { key: 'MouseLeft', pad: 'PadA', touch: 'A' },
-  dodge: { key: 'Space', pad: 'PadB', touch: 'B' },
+  /** On a phone the dodge button draws an icon, no letter: a line names it (`key.touch.dodge`). */
+  dodge: { key: 'Space', pad: 'PadB', touch: 'TouchDodge' },
   skill1: { key: 'Digit1', pad: 'PadX', touch: '1' },
   skill2: { key: 'Digit2', pad: 'PadY', touch: '2' },
   skill3: { key: 'Digit3', pad: 'PadLB', touch: '3' },
