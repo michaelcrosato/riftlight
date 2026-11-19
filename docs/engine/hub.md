@@ -291,7 +291,8 @@ the game listens, its voice feature is on (`engine.voiceOn`) and the mute button
 opens the microphone once through `hubSettings.openMicrophone()` (`Microphone`, `input.microphone`)
 and measures it with an `AnalyserNode` in its AudioContext (there after the first key, click or
 touch); when any of it ends (the game stops listening, the setting goes off, muted, no longer
-allowed, a replay) it stops the stream's tracks. Listen only while a shout does something (the
+allowed, a replay) it stops the stream's tracks. A stream whose tracks end by themselves (the
+DualSense's microphone unplugged) is let go and 52in1 asked again. Listen only while a shout does something (the
 browser shows the microphone in use), give the shout a button that does the same (Riftlight: War
 Cry, from the bar), and name it in `hub:dualsense` (`microphone`). Prompts name it with the line
 `key.voice_shout` and draw a microphone (`keyGlyph`). Tests set `input.microphone` to a `VoiceInput`

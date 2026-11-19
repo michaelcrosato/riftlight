@@ -10,9 +10,9 @@ import { Input, VOICE_KEYS } from '../input';
 import { Microphone } from './microphone';
 import { HubSettings } from './settings';
 
-/** A stream whose one track says when it is stopped. */
+/** A stream whose one track says when it is stopped (and ends then, as a real one does). */
 function fakeStream() {
-  const track = { stopped: false, stop: () => void (track.stopped = true) };
+  const track = { stopped: false, readyState: 'live' as 'live' | 'ended', stop: () => void Object.assign(track, { stopped: true, readyState: 'ended' }) };
   return { track, stream: { getTracks: () => [track] } as unknown as MediaStream };
 }
 
@@ -119,6 +119,36 @@ describe('Microphone (52in1’s, for shouts)', () => {
       await settle();
     }
     expect(w.source.openMicrophone, 'refused once: not asked every poll').toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again when the stream’s tracks end on their own (the DualSense unplugged); one that arrives ended is let go, not asked for every poll', async () => {
+    const w = world();
+    w.mic.listen(true);
+    await settle();
+    w.mic.listen(true);
+    expect([w.mic.open, w.connected.length]).toEqual([true, 1]);
+    w.streams[0]!.track.readyState = 'ended'; // the device went: the analyser would hear silence for ever
+    w.mic.listen(true);
+    await settle();
+    w.mic.listen(true);
+    expect(w.source.openMicrophone, 'asked again').toHaveBeenCalledTimes(2);
+    expect([w.mic.open, w.connected.length, w.streams[1]!.track.stopped], 'the new stream heard, the old one let go').toEqual([true, 1, false]);
+    w.heard.loud = 0.5;
+    expect(w.mic.level()).toBeCloseTo(0.5, 6);
+    // 52in1 answers with a stream already ended (no microphone left): none, until it closes
+    w.source.openMicrophone.mockImplementation(async () => {
+      const s = fakeStream();
+      s.track.readyState = 'ended';
+      w.streams.push(s);
+      return s.stream;
+    });
+    w.streams[1]!.track.readyState = 'ended';
+    for (let k = 0; k < 5; k++) {
+      w.mic.listen(true);
+      await settle();
+    }
+    expect(w.source.openMicrophone, 'once more, not on every poll').toHaveBeenCalledTimes(3);
+    expect([w.mic.open, w.mic.level(), w.connected.length]).toEqual([false, null, 0]);
   });
 
   it('hears nothing before the engine has sound (the first key or click), then hears it', async () => {

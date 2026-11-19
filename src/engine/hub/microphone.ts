@@ -19,12 +19,15 @@ const stop = (stream: MediaStream) => {
   for (const track of stream.getTracks()) track.stop();
 };
 
+/** Sound still comes: a track not ended (one ends by itself when its device goes: the DualSense unplugged). */
+const live = (stream: MediaStream) => stream.getTracks().some((track) => track.readyState !== 'ended');
+
 export class Microphone implements VoiceInput {
   private stream: MediaStream | null = null;
   private source: AudioNode | null = null;
   private analyser: AnalyserNode | null = null;
   private samples: Float32Array<ArrayBuffer> | null = null;
-  /** 52in1 was asked since the last close (answered with a stream, nothing yet, or none): never asked twice. */
+  /** 52in1 was asked since the last close (answered with a stream, nothing yet, or none): never asked twice (a stream that ends closes). */
   private asked = false;
   /** Counts closes: a stream answering an ask from before one is stopped at once. */
   private token = 0;
@@ -49,14 +52,19 @@ export class Microphone implements VoiceInput {
     return this.stream !== null;
   }
 
-  /** Input, on every poll: open the stream while the game listens and `on` holds, close it otherwise. */
+  /**
+   * Input, on every poll: open the stream while the game listens and `on` holds, close it otherwise.
+   * A stream whose tracks end by themselves (the DualSense's microphone unplugged, another device
+   * chosen) is let go and 52in1 asked again; one that arrives ended counts as none.
+   */
   listen(listening: boolean): void {
     if (!listening || !this.on) return this.close();
+    if (this.stream && !live(this.stream)) this.close();
     if (!this.asked) {
       this.asked = true;
       const token = this.token;
       void this.hub.openMicrophone().then((stream) => {
-        if (stream && token !== this.token) stop(stream);
+        if (stream && (token !== this.token || !live(stream))) stop(stream);
         else if (stream) this.stream = stream;
       });
     }
