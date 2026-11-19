@@ -15,9 +15,10 @@ hub that runs the games.
 - [ ] **Prompts follow the device used last** (`input.device`: `'keyboard'`, `'pad'`, `'touch'`),
   never a fixed "Press Space": a `controls` table, `{key:action}` in lines, `hud.prompt`,
   `hud.legend`, `hud.glyph` (PlayStation's buttons, or Xbox's if the player chose them).
-- [ ] **No dense web-style screens.** One choice per large row (HUD text at `scale: 2`), a few at a
-  time, a focus the d-pad moves, a legend of the buttons; no hover-only controls, small links,
-  forms or scroll boxes: `MenuInput` and `FocusList` (section 3).
+- [ ] **No dense web-style screens.** One choice per large row, a few at a time, a focus the d-pad
+  moves, a legend of the buttons; no hover-only controls, small links, forms, or lists only a
+  scroll bar moves: `MenuInput` and `FocusList` (section 3). Text at ten feet: capitals ≥ 1/40
+  of the screen's height (`scale: 1` on 270 rows: 28 px at 1080p).
 - [ ] **Touch is an add-on.** A phone held either way plays it, the stick and a button at once;
   the controls step aside while a pad or keys are used and come back on the next touch. A swipe
   dismisses, an action's button shows when there is something to do, and touch gets assists.
@@ -33,7 +34,7 @@ hub that runs the games.
   `hub:model`, `hub:effort`, `hub:harness`, `hub:session`, `hub:dualsense`, `hub:multiplayer`,
   `hub:moment`, the `game-lines` block.
 - [ ] **Storage of its own.** 52in1's games share one origin: keys under your game's prefix,
-  removed only by you (never `clear()`), never `ai-hub:`. The engine keys its own by the settings key.
+  removed only by you (never `clear()`), never `ai-hub:`.
 - [ ] **Checked on each device**, PNGs looked at (`node check.mjs`, GUIDE.md section 8): a pad
   (`--keys PadLStick:1,0*60,PadDown*8,PadA*9`), the mouse (`--keys Mouse@240,120*5,MouseLeft@240,150*3`),
   a phone each way (`"index.html?touch=1"`, `--size 390x844`, `844x390`), 21:9 (`--size 2100x900`).
@@ -196,13 +197,14 @@ lets Options and Esc open it (GUIDE.md, *Starting*).
 - **Set up** with `touchButtons` (`at` puts one in a corner), `touchStick: 'floating'` and
   `touchDensity: 2` (GUIDE.md, *Starting*).
 - **Context buttons**: `ctx.engine.touch?.set('KeyE', { hidden, label, cooldown, badge })` each
-  frame from the game's state (`?.`: null headless and without touch controls).
+  frame from the game's state (`?.`: null headless).
 - **Swipes** press `SwipeLeft`, `SwipeRight`, `SwipeUp` or `SwipeDown` (`SWIPE_KEYS`): dismiss a
-  dialogue or a card; `FocusList` closes on a sideways one.
+  dialogue or a card; `FocusList` closes on a sideways one. A panel over a floating stick's zone
+  keeps its taps: `ctx.engine.touch?.giveWay(rects)` (CSS px, each frame; `[]` gives it back).
 - **Assists** (the nearest target, a longer reach, auto-run) when `ctx.input.device === 'touch'`
-  (recorded: a replay agrees).
+  (recorded).
 - **Phones both ways**: upright, the art can be 130 columns wide. Keep the play area in view
-  (`camera: { minWidth }`: the ground's width; or follow the player) and the HUD clear of the
+  (`camera: { minWidth }`, or follow the player) and the HUD clear of the
   controls while they show (`ctx.engine.touch?.visible`, `rects()`, a floating stick's `zone`:
   GUIDE.md, *Starting*); hide them (`ctx.engine.touch?.show(false)`) while a menu or a result owns
   the screen.
@@ -210,8 +212,7 @@ lets Options and Esc open it (GUIDE.md, *Starting*).
 ## 5. The player's settings and the DualSense
 
 In 52in1 the player sets volumes, vibration and a DualSense's extras once for every game; the
-engine applies the volumes (music on the music bus, everything else as effects: never a master
-volume) and the hub scales rumble. Outside 52in1 everything still plays.
+engine applies the volumes (music, effects; never a master) and the hub scales rumble.
 
 ```js
 Engine.start(game, { settings: { motion: true, voice: true } }); // Motion aim, Microphone, Shout sensitivity rows
@@ -237,7 +238,7 @@ ctx.input.voice = true; // a shout presses VOICE_KEYS.shout once 52in1 allows th
 
 ## 6. 52in1 sessions and the head
 
-52in1 deals rounds for up to four friends, each on their own device. A game joins with
+52in1 deals rounds for up to four friends, a device each. A game joins with
 every online mode it can and plays the one the hub picks (`info.mode`): `parallel` (the same start
 each, best time or score), `ghost` (the others as ghosts: `session.send`, `RemoteTrack`),
 `shared-world` (one world, the host's: `session.finish`), `moments` (three short moments, each a
