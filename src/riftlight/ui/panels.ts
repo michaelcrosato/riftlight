@@ -296,6 +296,12 @@ export class Codex implements Panel {
   /** Narrow only: the entry is open (else the list shows). */
   private reading = false;
   private backRect: Rect | null = null;
+  /**
+   * Narrow only: a press on a list row waiting to see a tap or a swipe (the row, where it went
+   * down, whether it moved since): a tap opens the entry as it lets go there, a swipe across the
+   * list opens nothing (the layer closes the codex with it), as `Menu` does.
+   */
+  private press: { row: number; x: number; y: number; moved: boolean; touch: boolean } | null = null;
 
   constructor(
     private readonly mechanics: () => readonly MechanicInfo[],
@@ -417,9 +423,20 @@ export class Codex implements Panel {
     }
     if (e.kind === 'pointer') {
       const i = this.rows.findIndex((r) => inside(r, e.x, e.y));
+      if (this.narrow && this.press) {
+        // a finger that slides is a swipe, not a tap; a mouse's click keeps its drift on the row
+        const p = this.press;
+        if (e.type === 'move' && (Math.abs(e.y - p.y) > 3 || (p.touch && Math.abs(e.x - p.x) > 3))) p.moved = true;
+        if (e.type === 'up') {
+          this.press = null;
+          if (!p.moved && i === p.row) this.reading = true;
+        }
+        return true;
+      }
       if (i >= 0) {
         this.focus = i;
-        if (this.narrow && e.type === 'down') this.reading = true;
+        // a phone's list opens the entry on release, where the press went down (`press`)
+        if (this.narrow && e.type === 'down') this.press = { row: i, x: e.x, y: e.y, moved: false, touch: !!e.touch };
         return true;
       }
     }

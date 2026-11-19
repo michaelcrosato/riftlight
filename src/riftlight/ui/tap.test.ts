@@ -12,10 +12,10 @@ import { StatSheet } from '../core/mods';
 import { RIFTLIGHT_OPTIONS } from '../index';
 import { t } from '../lang';
 import { type Rect, UiCanvas } from './kit';
-import { tapArt, TAP_CSS } from './layer';
+import { tapArt, TAP_CSS, UiLayer } from './layer';
 import { Menu, type Widget } from './menu';
 import { pauseMenu, slotsMenu, titleMenu } from './menus';
-import { CharacterSheet, SHEET_PAGES } from './panels';
+import { CharacterSheet, Codex, SHEET_PAGES } from './panels';
 import { NORMAL } from '../game/difficulty';
 
 /** The renderer's view on a page: its framing at Riftlight's density, touch controls or not. */
@@ -298,5 +298,53 @@ describe('a thumb on the panels', () => {
     expect(clicked, 'a finger sliding sideways: nothing').toBe(1);
     press(true, 1);
     expect(clicked, 'a finger\'s tap').toBe(2);
+  });
+
+  it('the codex on a phone held upright: a tap on a row opens its entry as the finger lifts there; a swipe from the list opens nothing and closes the codex', () => {
+    const mechanics = ['mire', 'gale', 'ember'].map((id) => ({ id, name: id, description: 'What it does.', bypass: 'Walk round.', exploit: 'Dash.' }));
+    const reading = (c: Codex) => (c as unknown as { reading: boolean }).reading;
+    const open = () => {
+      const layer = new UiLayer();
+      layer.tap = 15;
+      const codex = new Codex(() => mechanics, () => ['mire', 'gale']);
+      layer.open(codex);
+      for (let i = 0; i < 10; i++) layer.update(0.05); // opened (its rows where they stay)
+      layer.draw(canvas(124, 260).ui, 0);
+      const rows = (codex as unknown as { rows: Rect[] }).rows;
+      expect(codex.narrow, 'a phone\'s list').toBe(true);
+      return { layer, codex, row: rows[1]! };
+    };
+    const finger = (layer: UiLayer, type: 'down' | 'move' | 'up', x: number, y: number) => layer.input({ kind: 'pointer', type, x, y, touch: true });
+    // a tap: nothing on the press, the entry as the finger lifts on the row
+    {
+      const { layer, codex, row } = open();
+      finger(layer, 'down', row.x + 20, row.y + 5);
+      expect(reading(codex), 'not on the press').toBe(false);
+      finger(layer, 'up', row.x + 21, row.y + 5);
+      expect(reading(codex), 'opened as it lifts').toBe(true);
+    }
+    // a swipe sideways or down from a row: no entry, and the swipe closes the codex
+    for (const [dir, dx, dy] of [
+      ['left', -30, 0],
+      ['right', 30, 0],
+      ['down', 0, 30],
+    ] as const) {
+      const { layer, codex, row } = open();
+      const x = row.x + row.w / 2;
+      const y = row.y + 5;
+      finger(layer, 'down', x, y);
+      finger(layer, 'move', x + dx, y + dy);
+      finger(layer, 'up', x + dx, y + dy);
+      expect(reading(codex), `${dir}: no entry`).toBe(false);
+      expect(layer.swipe(dir, x, y), `${dir}: the swipe closes it`).toBe(true);
+      expect(layer.top, dir).toBeUndefined();
+    }
+    // a press that lifts on another row opens neither
+    {
+      const { layer, codex, row } = open();
+      finger(layer, 'down', row.x + 20, row.y + 5);
+      finger(layer, 'up', row.x + 20, row.y + row.h + 5);
+      expect(reading(codex)).toBe(false);
+    }
   });
 });
