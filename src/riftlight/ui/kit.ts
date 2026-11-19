@@ -303,27 +303,23 @@ export function wrap(text: string, width: number, scale = 1): string[] {
  * than breaking anywhere the language breaks words (a small phone's few rows of room).
  */
 export function wrapParts(text: string, width: number, measure: (s: string) => number = textWidthPx, separator = ' · '): string[] {
-  const out: string[] = [];
-  for (const part of text.split(separator)) {
-    const last = out.at(-1);
-    if (last !== undefined && measure(last + separator + part) <= width) out[out.length - 1] = last + separator + part;
-    else out.push(...wrapText(part, width, measure));
-  }
+  const out = wrapRow(text.split(separator), width, separator, measure);
   const words = wrapText(text, width, measure);
   return out.length <= words.length ? out : words;
 }
 
 /**
  * A row of parts (control hints, a lab's key help) joined by `separator`, in lines of at most
- * `width` art pixels at `scale`: broken between parts, as many as fit on each line; a part wider
- * than a line wraps inside (`wrap`). A narrow screen (a phone in portrait) gets it on several lines.
+ * `width` art pixels (`measure`: the font it is drawn in, default the normal one): broken between
+ * parts, as many as fit on each line; a part wider than a line wraps inside where the language
+ * breaks words. A narrow screen (a phone in portrait) gets it on several lines.
  */
-export function wrapRow(parts: readonly string[], width: number, separator = '  ', scale = 1): string[] {
+export function wrapRow(parts: readonly string[], width: number, separator = '  ', measure: (s: string) => number = textWidthPx): string[] {
   const out: string[] = [];
   for (const part of parts) {
     const last = out.at(-1);
-    if (last !== undefined && textWidthPx(last + separator + part, scale) <= width) out[out.length - 1] = last + separator + part;
-    else out.push(...wrap(part, width, scale));
+    if (last !== undefined && measure(last + separator + part) <= width) out[out.length - 1] = last + separator + part;
+    else out.push(...wrapText(part, width, measure));
   }
   return out;
 }
