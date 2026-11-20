@@ -127,9 +127,9 @@ src/engine/ui/settingsMenu.ts, driven by `MenuInput` / `FocusList` from the engi
 headless-testable), its words lines (`SETTINGS_LINES`: a game with a line of the same id in
 `engine.controls.names` shows its own). The ⚙ button opens it (`settings.button`: a corner, default
 top-right, shown on a mouse only while the pointer moves; `false`: none, so a game opens it from its
-own menu with `engine.settings.open()`); `settings.padButton: true` lets Options (and Esc) open it,
-for a game with no pause menu of its own (default off; the playground, the sandbox and Rift Runner
-turn it on). Open, it pauses the game; a key or pad button held when it
+own menu with `engine.settings.open()`); Options and Esc open it too (`settings.padButton`,
+`optionsOpensSettings`: `'auto'` by default, off once the game's code reads them, while its
+`controls` bind them to an action of its own (not `settings`), and in a round). Open, it pauses the game; a key or pad button held when it
 opens or closes reads as up until let go, and a stick held then reads centred until it goes back
 inside its deadzone (`input.release()`), so the press that opened it never acts in it, a stick still
 leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero.

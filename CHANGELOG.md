@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.82.0
+
+- `settings.padButton` defaults to `'auto'`: Options and Esc open the engine's settings in a game that doesn't use them itself, so every game reaches its settings (Xbox prompts among them) from a pad. It stays off once the game's code reads `PadStart` or `Escape` in `update` or `fixedUpdate` (`input.claimed`), while its `controls` bind them to an action of its own (any but `settings`), and on a 52in1 game night's round page. A game whose Options or Esc already did something keeps it; one where they did nothing now opens its settings (`padButton: false` keeps the old way). `true` and `false` keep their meaning. The rule is `optionsOpensSettings(padButton, controls, { roundPage, claimed })`.
+
 ## 0.81.0
 
 - CONTROLS.md's checklist gives text at ten feet a measure: capitals at least 1/40 of the screen's height (the 5×7 font at `scale: 1` on 270 rows: 28 px at 1080p). A list taller than the screen may scroll with its focus; never one only a scroll bar moves.

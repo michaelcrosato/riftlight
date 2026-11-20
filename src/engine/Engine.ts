@@ -194,6 +194,24 @@ export interface Game {
   dispose?(ctx: GameContext): void;
 }
 
+/** `EngineOptions.settings.padButton`: Options (Esc) opens the engine's settings always, never, or `'auto'`. */
+export type SettingsPadButton = boolean | 'auto';
+
+/**
+ * Whether Options (Esc on the keyboard) opens the engine's settings panel. `padButton` true: always;
+ * false: never; `'auto'` (the default, `undefined`): unless the game claims the button itself, by
+ * its `controls` binding `PadStart` (pad) or `Escape` (key) to an action of its own (any but
+ * `settings`, the name a game gives the engine's panel so its legend can show the button) or by its
+ * code having read them this level (`claimed`: `input.claimed`), or the page is a 52in1 game
+ * night's round (`roundPage`: a round never pauses). So a game with no pause menu of its own still
+ * reaches the settings, the Xbox prompts among them, from a pad, and one with its own keeps it.
+ */
+export function optionsOpensSettings(padButton: SettingsPadButton | undefined, controls: ControlTable, o: { roundPage?: boolean; claimed?: boolean } = {}): boolean {
+  if (padButton !== undefined && padButton !== 'auto') return padButton;
+  if (o.roundPage || o.claimed) return false;
+  return !Object.entries(controls).some(([action, c]) => action !== 'settings' && (c.pad === 'PadStart' || c.key === 'Escape'));
+}
+
 export interface EngineOptions {
   container?: HTMLElement;
   resolution?: Resolution;
@@ -250,8 +268,10 @@ export interface EngineOptions {
    * rate, debug info), sound (on, volume, music, effects) and controls (button prompts, vibration),
    * in a panel the ⚙ button opens. `button`: its corner (default, or true: 'top-right'; on a mouse
    * it shows while the pointer moves), or false for none: open the panel from your own menu
-   * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
-   * a game with no pause menu of its own (default false: a game's Options is its own); Options acts as
+   * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it:
+   * true always, false never, `'auto'` (the default) unless the game claims Options or Esc itself
+   * (`optionsOpensSettings`: its `controls` bind `PadStart` or `Escape` to an action of its own) or
+   * the page is a 52in1 game night's round; Options acts as
    * it is let go, never when Create joined it (`HOST_CHORD`, 52in1's bar). `voice`: the
    * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`) and Shout
    * sensitivity (`input.shoutSensitivity` follows it). `motion`: the game
@@ -259,7 +279,7 @@ export interface EngineOptions {
    * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`, the
    * volumes `pixel-engine:audio:<key>`; default the first game's name), false: nowhere.
    */
-  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean; motion?: boolean };
+  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: SettingsPadButton; voice?: boolean; motion?: boolean };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
   /**
@@ -482,8 +502,10 @@ export class Engine {
   private settingsPanel: SettingsPanel | null = null;
   /** Whether the game was paused when the settings opened (they pause it, and give it back). */
   private pausedBeforeSettings = false;
-  /** Options (Esc) opens the settings panel (`EngineOptions.settings.padButton`). */
-  private settingsKeys = false;
+  /** Options (Esc) opens the settings panel (`EngineOptions.settings.padButton`: `optionsOpensSettings`). */
+  private settingsKeys: SettingsPadButton | undefined = undefined;
+  /** The page is a 52in1 game night's round (`?aihub=` in a frame): a round never pauses, so `'auto'` opens nothing. */
+  private roundPage = false;
   /** The dynamic light pool, created on first use of `ctx.lights` / `engine.lights`. */
   private _lights: LightPool | null = null;
   /** Active engine hotkeys (from EngineOptions.debugKeys; none until the engine starts). */
@@ -936,6 +958,7 @@ export class Engine {
 
       engine.reseed(game);
       engine.controls.table = game.controls ?? {};
+      engine.input.resetClaims();
       await game.setup(engine.context);
       steps.setupDone?.();
       camera.teleport(game.cameraTarget(engine.context));
@@ -976,7 +999,9 @@ export class Engine {
     const o = options.settings ?? {};
     const corner = o.button;
     const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice, motion: o.motion }));
-    this.settingsKeys = o.padButton === true;
+    this.settingsKeys = o.padButton;
+    // a 52in1 round as its session client tells one: ?aihub= in a framed page
+    this.roundPage = typeof location !== 'undefined' && /[?&]aihub=/.test(location.search) && window.parent !== window;
     this.settings.onOpen = () => {
       if (this.input.playing) return false; // a replay's input plays on untouched (pausing drops presses)
       this.pausedBeforeSettings = this.paused;
@@ -1260,6 +1285,7 @@ export class Engine {
       if (options.camera) this.useCamera(options.camera);
       this.reseed(game);
       this.controls.table = game.controls ?? {};
+      this.input.resetClaims();
       await game.setup(this.context);
       if (!live()) return; // superseded: the newer load (or dispose) unloads what setup built
       this.settings.levelStarted(); // a look the player chose wins over the level's
@@ -1719,11 +1745,14 @@ export class Engine {
   }
 
   /**
-   * Options (Esc) opens the settings panel for a game that asked (`settings.padButton`), at the end
-   * of the frame it was pressed on (`tick()`). Never during a replay.
+   * Options (Esc) opens the settings panel (`settings.padButton`, `optionsOpensSettings` with the
+   * running game's `controls`), at the end of the frame it was pressed on (`tick()`). Never during a
+   * replay.
    */
   private openSettingsOnKey(): void {
-    if (!this.settingsPanel || !this.settingsKeys || this.input.playing || this.settings.isOpen) return;
+    if (!this.settingsPanel || this.input.playing || this.settings.isOpen) return;
+    const claimed = this.input.claimed('PadStart') || this.input.claimed('Escape');
+    if (!optionsOpensSettings(this.settingsKeys, this.controls.table, { roundPage: this.roundPage, claimed })) return;
     if (this.input.wasPressed('PadStart', 'Escape')) this.settings.open();
   }
 
@@ -1773,7 +1802,12 @@ export class Engine {
     this.physics.update(dt, this.fixedStep);
     if (!this.ready) return; // a hook disposed the engine mid-frame
     this.tweens.update(dt);
-    this.game.update?.(ctx, dt);
+    this.input.claiming = true; // the game's reads of Options and Esc are its own (`input.claimed`)
+    try {
+      this.game.update?.(ctx, dt);
+    } finally {
+      this.input.claiming = false;
+    }
     if (!this.ready) return;
     this.particles.update(dt);
     this.cameraUpdate.shake = this.shake.update(realDt);
@@ -1802,7 +1836,13 @@ export class Engine {
   }
 
   private readonly fixedStep = (fixedDt: number) => {
-    if (this.ready) this.game.fixedUpdate?.(this.context, fixedDt);
+    if (!this.ready) return;
+    this.input.claiming = true;
+    try {
+      this.game.fixedUpdate?.(this.context, fixedDt);
+    } finally {
+      this.input.claiming = false;
+    }
   };
 
   /**

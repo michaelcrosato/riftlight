@@ -1,5 +1,5 @@
 // Public engine API. Games import from here, not from internal modules.
-export { DEFAULT_TOUCH_DENSITY, Engine, optionsFromUrl, withUrlOptions, type EngineOptions, type Game, type GameContext, type HeadlessOptions } from './Engine';
+export { DEFAULT_TOUCH_DENSITY, Engine, optionsFromUrl, optionsOpensSettings, withUrlOptions, type EngineOptions, type Game, type GameContext, type HeadlessOptions, type SettingsPadButton } from './Engine';
 export { ENGINE_VERSION } from './version';
 export {
   CAMERA_PRESETS,

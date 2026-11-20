@@ -2,7 +2,8 @@
 // again (by name, rooms by title, with `Recording.args`), and the labs run headless. One engine at
 // a time: each is disposed before the next boots.
 import { describe, expect, it } from 'vitest';
-import { Engine, type Recording } from './engine';
+import { Vector3 } from 'three/webgpu';
+import { Engine, type GameContext, optionsOpensSettings, type Recording } from './engine';
 import { nodeAssets } from './engine/node';
 import { GAMES, gameForRecording } from './games';
 import { PUBLIC_DIR } from './riftlight/headless';
@@ -78,4 +79,52 @@ describe('the games table', () => {
     },
     T,
   );
+});
+
+describe('Options (Esc) opens the engine’s settings by default only where the game does not claim it', () => {
+  it('the rule: true always, false never, auto (the default) unless a control of the game’s own binds PadStart or Escape, its code read them, or on a round page', () => {
+    const none = {};
+    const legend = { settings: { key: 'Escape', pad: 'PadStart' } }; // the engine's panel, named so a legend shows the button
+    const pause = { move: { key: 'WASD' }, pause: { key: 'Escape', pad: 'PadStart' } };
+    const padOnly = { next: { key: 'KeyN', pad: 'PadStart' } };
+    const keyOnly = { back: { key: 'Escape', pad: 'PadB' } };
+    expect([none, legend, pause, padOnly, keyOnly].map((c) => optionsOpensSettings(undefined, c)), 'the default is auto').toEqual([true, true, false, false, false]);
+    expect([none, legend].map((c) => optionsOpensSettings('auto', c, { claimed: true })), 'its code read Options or Esc').toEqual([false, false]);
+    expect([none, legend].map((c) => optionsOpensSettings('auto', c, { roundPage: true })), 'a round never pauses').toEqual([false, false]);
+    expect([optionsOpensSettings(true, pause, { roundPage: true, claimed: true }), optionsOpensSettings(false, none)], 'what a game says wins').toEqual([true, false]);
+  });
+
+  it('every game in the table keeps what it had: its own pause menu where it has one, the engine’s settings where it asked', () => {
+    const opens = Object.fromEntries(GAMES.map((g) => [g.id, optionsOpensSettings(g.options.settings?.padButton, g.make().controls ?? {})]));
+    expect(opens).toEqual({ riftlight: false, playground: true, sandbox: true, lootlab: false, levellab: false, arena: false, arcade: false, world: false });
+  });
+
+  it('a game’s own reads of Options or Esc claim them (in update and fixedUpdate), the engine’s do not; a new game starts with none claimed', async () => {
+    const reads = (where: 'update' | 'fixedUpdate' | 'none') => ({
+      name: `reads ${where}`,
+      setup() {},
+      update(ctx: GameContext) {
+        if (where === 'update') ctx.input.wasPressed('Escape');
+      },
+      fixedUpdate(ctx: GameContext) {
+        if (where === 'fixedUpdate') ctx.input.consumePress('PadStart');
+      },
+      cameraTarget: () => new Vector3(),
+    });
+    const engine = await Engine.headless(reads('none'), { assets });
+    try {
+      engine.input.wasPressed('Escape', 'PadStart'); // outside the game's hooks: the engine's, or a test's
+      engine.step(3);
+      expect([engine.input.claimed('Escape'), engine.input.claimed('PadStart')], 'nothing read: nothing claimed').toEqual([false, false]);
+      await engine.loadGame(reads('update'));
+      engine.step(2);
+      expect(engine.input.claimed('Escape'), 'read in update').toBe(true);
+      await engine.loadGame(reads('fixedUpdate'));
+      expect(engine.input.claimed('Escape'), 'a new game: none claimed').toBe(false);
+      engine.step(2);
+      expect(engine.input.claimed('PadStart'), 'read in fixedUpdate').toBe(true);
+    } finally {
+      engine.dispose();
+    }
+  });
 });
