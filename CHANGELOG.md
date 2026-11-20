@@ -8,6 +8,11 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.81.0
+
+- CONTROLS.md's checklist gives text at ten feet a measure: capitals at least 1/40 of the screen's height (the 5×7 font at `scale: 1` on 270 rows: 28 px at 1080p). A list taller than the screen may scroll with its focus; never one only a scroll bar moves.
+- CONTROLS.md section 4 names `ctx.engine.touch?.giveWay(rects)`: a panel open over a floating stick's zone keeps its taps.
+
 ## 0.80.0
 
 - `PadPlayer.rumble(r)`: couch co-op shakes a guest's joined pad alone (`input.player(slot).rumble`), as `input.rumble` shakes player 1's: the frame's strongest, scaled by the vibration setting; nothing headless, in a replay or with no pad in the slot (docs/engine/couch.md).
