@@ -95,9 +95,10 @@ const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'cli
  * ConstantSourceNode (connected to nothing) started and stopped at once. 52in1's companion (the
  * hub's first script in a game's page: docs/engine/hub.md *The player's settings*) knows a game's
  * context by a source started in it, and holds it while the hub's cards are up (a game night's
- * round loads under them, `?aihub=1`) until play starts; it hears `AudioScheduledSourceNode`'s
- * `start`, which an AudioBufferSourceNode (every sound here) overrides with its own, so without
- * this the game's music would play on under the cards. A browser without it: nothing to say.
+ * round loads under them, `?aihub=1`) until play starts. It hears every source's `start` (an
+ * AudioBufferSourceNode's own too, since 52in1 `a6139e95`; before, only
+ * `AudioScheduledSourceNode`'s, and the music played on under the cards); this makes the context
+ * known before a sound plays. A browser without it: nothing to say.
  */
 function announce(ctx: AudioContext): void {
   try {

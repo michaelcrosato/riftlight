@@ -89,7 +89,8 @@
     if (e.clientY < 90) wake();
   };
   var onTouch = function (e) {
-    if (((e.touches && e.touches[0] && e.touches[0].clientY) || 999) < 90) wake();
+    var touch = e.touches && e.touches[0];
+    if (touch && touch.clientY < 90) wake();
   };
 
   /* --- the controller, as this frame sees it ------------------------------ */
@@ -158,8 +159,10 @@
   function holdContext(ctx) {
     if (!ctx || heldContexts.has(ctx)) return;
     var playing = ctx.state === 'running';
-    heldContexts.set(ctx, { playing: playing, wanted: false });
-    if (playing) ctx.suspend().catch(function () {});
+    var held = { playing: playing, wanted: false, suspending: null };
+    heldContexts.set(ctx, held);
+    // A suspend settles later: until then the context still says it is running.
+    if (playing) held.suspending = ctx.suspend().catch(function () {});
   }
   function holdMedia(el) {
     if (!el || el.muted || heldMedia.has(el)) return;
@@ -199,7 +202,14 @@
       return report();
     }
     heldContexts.forEach(function (held, ctx) {
-      if ((held.playing || held.wanted) && ctx.state === 'suspended') ctx.resume().catch(function () {});
+      if (!held.playing && !held.wanted) return;
+      var give = function () {
+        if (!hushed && ctx.state === 'suspended') ctx.resume().catch(function () {});
+      };
+      // suspended: back now; its own suspend still on the way: once that settles, unless the hub
+      // has hushed it again meanwhile
+      if (ctx.state === 'suspended') give();
+      else if (held.suspending) held.suspending.then(give);
     });
     heldMedia.forEach(function (el) {
       el.muted = false;
@@ -348,15 +358,21 @@
   }
 
   try {
-    var source = win.AudioScheduledSourceNode && win.AudioScheduledSourceNode.prototype;
-    if (source && typeof source.start === 'function') {
-      var start = source.start;
-      source.start = function () {
+    // Each source node's start() says which context is the game's. In Chromium a buffer source,
+    // an oscillator and a constant source each have a start() of their own, which never calls
+    // AudioScheduledSourceNode's, so each of those is wrapped as well.
+    var wrapStart = function (proto) {
+      if (!proto || !Object.prototype.hasOwnProperty.call(proto, 'start') || typeof proto.start !== 'function') return;
+      var start = proto.start;
+      proto.start = function () {
         remember(seenContexts, this.context);
         if (hushed) holdContext(this.context);
         return start.apply(this, arguments);
       };
-    }
+    };
+    ['AudioScheduledSourceNode', 'AudioBufferSourceNode', 'OscillatorNode', 'ConstantSourceNode'].forEach(function (name) {
+      wrapStart(win[name] && win[name].prototype);
+    });
     ['AudioContext', 'webkitAudioContext'].forEach(function (name) {
       var proto = win[name] && win[name].prototype;
       if (!proto || typeof proto.resume !== 'function') return;

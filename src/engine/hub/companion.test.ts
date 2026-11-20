@@ -1,7 +1,7 @@
 // The engine's sound under 52in1's companion (scripts/hub/companion.js, vendored unmodified: the
 // hub's first script in every game page it serves), run here against Web Audio shaped as a
 // browser's: `start` on AudioScheduledSourceNode, and an AudioBufferSourceNode's own `start` over
-// it, which the companion's hook never sees. The companion holds a game's AudioContext while the
+// it, which the companion wraps too (since 52in1 a6139e95). The companion holds a game's AudioContext while the
 // hub's cards are up (a game night's round loads under them, `?aihub=1`) once a source started in
 // it says which context is the game's, and puts the hub's master volume in front of the speakers.
 // The real page: the `hub` e2e suite (scripts/e2e-hub-companion.mjs).
@@ -163,19 +163,16 @@ describe('the engine under 52in1’s companion', () => {
     audio.dispose();
   });
 
-  it('a hush lifted while the companion’s hold is still on its way (the context made as play starts) leaves it suspended: the next gesture brings the sound back', async () => {
+  it('a hush lifted while the companion’s hold is still on its way (the context made as play starts): the sound comes back once the hold settles, no gesture needed', async () => {
     const b = browser('?aihub=1');
     vi.stubGlobal('AudioContext', b.AudioContext);
     const page = new EventTarget();
     const audio = new AudioManager(page);
     page.dispatchEvent(new Event('keydown')); // the companion asks the new context to suspend: it takes a moment
-    b.say({ hubFrame: 'hush', on: false }); // play starts meanwhile: the context still runs, so the companion resumes nothing
+    b.say({ hubFrame: 'hush', on: false }); // play starts meanwhile: the context still runs
     await settle();
     const ctx = b.AudioContext.made[0]!;
-    expect(ctx.state, 'the suspend lands after the hush lifted').toBe('suspended');
-    page.dispatchEvent(new Event('keydown')); // the player's next key: the engine listens again once its context stops
-    await settle();
-    expect(ctx.state).toBe('running');
+    expect(ctx.state, 'the companion gives it back once its suspend has landed (52in1 a6139e95)').toBe('running');
     expect(audio.play('coin')).toBe(true);
     audio.dispose();
   });

@@ -18,6 +18,8 @@ plays the hub page's side, 52in1's `assets/js/ui/frames.js`, at the same commit;
 `scripts/hub/LICENSE` is `lib/hub/LICENSE` (MIT, blob `3b9c8c68416f194a1a1a6aa3327a4bd952b96145`, added in 52in1 `b59a5fcd`): the
 licence of every file here.
 
-All six are 52in1's `lib/hub/` at commit `1b87a11946a57866d311a5e10080334d15dc2700` (`main`,
-2026-11-19; session client 1.4.0), byte for byte: `git hash-object` on each gives that commit's blob
-(companion.js: `eb487f1624db4cea3b12dc41d533e9b18af7272e`).
+All six are 52in1's `lib/hub/` at commit `a411757e2f5e6be6081acdebe41743bd7398b460` (`main`,
+2026-11-20; session client 1.4.0), byte for byte: `git hash-object` on each gives that commit's blob
+(companion.js: `f9fb30ed90e4da3f245420c4b26d3cfd9c3711c4`, with the fixes from #196: it wraps a
+buffer source's own `start`, gives back a context whose suspend was still on its way when the hush
+lifted, and wakes on a touch at `clientY` 0).
