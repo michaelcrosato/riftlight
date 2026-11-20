@@ -74,9 +74,8 @@ the hub's page speaks to it by postMessage (`hubFrame`): to the game `pads` {wan
 
 - **The hush.** A game night's round (`?aihub=1`) loads under the hub's cards, and the companion
   holds the game's AudioContext until the round starts. It knows the context by a source started in
-  it, and hears only `AudioScheduledSourceNode`'s `start`, which an AudioBufferSourceNode (every
-  engine sound) overrides: the engine starts a silent ConstantSourceNode as it makes its context
-  (docs/engine/audio.md), or the music would play on under the cards.
+  it (an AudioBufferSourceNode's own `start` too, since 52in1 fixed #196), and the engine starts a
+  silent ConstantSourceNode as it makes its context, so it is known at once (docs/engine/audio.md).
 - **Volumes.** The hub's master is the companion's gain in front of the speakers; music and effects
   are the engine's buses (`engine.hubSettings`).
 - **The wake band.** A touch, or the mouse, in the top 90 CSS px brings the hub's bar back (`wake`).
