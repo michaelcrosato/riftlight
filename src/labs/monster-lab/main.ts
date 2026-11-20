@@ -602,7 +602,7 @@ export interface MonsterLabApi {
 
 const container = document.getElementById('app')!;
 const lab = new MonsterLab();
-Engine.start(lab, { container, ...optionsFromUrl(), filters: [], look: undefined, settings: { button: false, key: false } })
+Engine.start(lab, { container, ...optionsFromUrl(), filters: [], look: undefined, settings: { button: false, key: false, padButton: false } })
   .then((engine) => {
     ui(engine, lab);
     const api: MonsterLabApi = {

@@ -1150,14 +1150,39 @@ export class Input {
     return this.anyDown(codes);
   }
 
+  /**
+   * @internal True while the engine runs the game's own hooks (`update`, `fixedUpdate`): a read of
+   * Options or Esc then (`isDown`, `wasPressed`, `consumePress`) is the game claiming the button
+   * (`claimed`), never one of the engine's own (its settings panel).
+   */
+  claiming = false;
+  private readonly claims = new Set<string>();
+  /**
+   * The game's code has read `code` (Options: `PadStart`, Esc: `Escape`) in its own hooks since the
+   * level began (`EngineOptions.settings.padButton` `'auto'`: the engine's settings then leave the
+   * button to the game). Presentation only: never recorded.
+   */
+  claimed(code: string): boolean {
+    return this.claims.has(code);
+  }
+  /** @internal A new game or level: nothing claimed yet. */
+  resetClaims(): void {
+    this.claims.clear();
+  }
+  private claim(codes: readonly string[]): void {
+    for (const c of codes) if (c === 'PadStart' || c === 'Escape') this.claims.add(c);
+  }
+
   /** `isDown` for a list of codes, without building a rest-argument array (fixed-step code). */
   anyDown(codes: readonly string[]): boolean {
+    if (this.claiming) this.claim(codes);
     for (const c of codes) if (this.held.has(c) || this.padHeld.has(c)) return true;
     return false;
   }
 
   /** True once per physical key press (valid for the current render frame). */
   wasPressed(...codes: string[]): boolean {
+    if (this.claiming) this.claim(codes);
     return codes.some((c) => this.pressed.has(c));
   }
 
@@ -1173,6 +1198,7 @@ export class Input {
 
   /** `consumePress` for a list of codes, without building a rest-argument array. */
   consumeAny(codes: readonly string[]): boolean {
+    if (this.claiming) this.claim(codes);
     let hit = false;
     for (const c of codes) {
       const t = this.queued.get(c);

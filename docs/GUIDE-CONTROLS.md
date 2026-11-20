@@ -189,8 +189,8 @@ if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOpt
 repeats); `FocusList` keeps a list's focus and takes the pointer (hover, click, tap). Read both in
 `update` (only `ctx.input`: a menu replays); call `input.release()` as a menu opens or closes and
 `input.clearQueued()` as it closes (GUIDE.md, *Input*). The engine's settings panel works the
-same: a pause menu opens it (`ctx.engine.settings.open()`), else `settings: { padButton: true }`
-lets Options and Esc open it (GUIDE.md, *Starting*).
+same: a pause menu opens it (`ctx.engine.settings.open()`), else Options and Esc do
+(`padButton: 'auto'`, off once you read them or `controls` bind them).
 
 ## 4. Touch as an add-on
 

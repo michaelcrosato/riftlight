@@ -221,8 +221,10 @@ await engine.loadGame(new Level2());     // next level: same renderer, camera, i
 Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are off outside
 `?debug=1`; players get a settings panel (picture, sound, controls; saved per game) from the ⚙
 button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it). A game with a
-pause menu opens the panel from there (`ctx.engine.settings.open()`) and hides the ⚙; one with
-none passes `padButton: true`, so Options and Esc open it (the kit's `game.js`). In a 52in1 round,
+pause menu opens the panel from there (`ctx.engine.settings.open()`) and hides the ⚙; in one with
+none, Options and Esc open it by themselves (`padButton: 'auto'`, the default: off once the game's
+code reads them or its `controls` bind them to an action of its own; `true` always, as the kit's
+`game.js`). In a 52in1 round,
 which never pauses, Gem Rush turns both off (CONTROLS.md). A game that uses R, P or M itself
 moves that hotkey for `?debug=1` with `debugKeys: { resolution: 'F2' }`.
 
